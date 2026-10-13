@@ -4,8 +4,10 @@ import { requirePublicEnv } from "@/lib/env";
 
 /** Supabase client for Server Components, Server Actions and Route Handlers (anon key + user session; RLS applies). */
 export async function createClient() {
-  const env = requirePublicEnv();
+  // Read cookies first: this marks the caller as request-time (dynamic), so Next never tries to
+  // prerender a page at build time and trip over env that only exists at runtime.
   const cookieStore = await cookies();
+  const env = requirePublicEnv();
 
   return createServerClient(env.NEXT_PUBLIC_SUPABASE_URL, env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
     cookies: {

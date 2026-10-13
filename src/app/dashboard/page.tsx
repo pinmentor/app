@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "./actions";
 
+export const dynamic = "force-dynamic";
 export const metadata = { title: "Dashboard — PinMentor" };
 
 const membershipRows = z.array(z.object({ workspace_id: z.uuid(), role: z.string() }));

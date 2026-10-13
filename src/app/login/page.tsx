@@ -3,6 +3,7 @@ import { safeNextPath } from "@/lib/auth/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { LoginForm } from "./login-form";
 
+export const dynamic = "force-dynamic";
 export const metadata = { title: "Sign in — PinMentor" };
 
 const CALLBACK_ERRORS: Record<string, string> = {
