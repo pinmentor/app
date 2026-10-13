@@ -8,6 +8,21 @@ export type LoginState = { status: "idle" | "sent" | "error"; message?: string }
 
 const GENERIC_ERROR = "We could not send the link. Please check the email address and try again.";
 
+/** User-facing text for the Supabase Auth error codes that a visitor can actually act on. */
+function messageFor(code: string | undefined): string {
+  switch (code) {
+    case "over_email_send_rate_limit":
+    case "over_request_rate_limit":
+      return "Too many sign-in emails were requested. Please wait a few minutes and try again.";
+    case "captcha_failed":
+      return "The verification challenge failed. Refresh the page and try again.";
+    case "email_address_invalid":
+      return "That email address is not accepted. Try a different one.";
+    default:
+      return GENERIC_ERROR;
+  }
+}
+
 async function siteOrigin(): Promise<string> {
   const h = await headers();
   const origin = h.get("origin");
@@ -45,6 +60,10 @@ export async function requestMagicLink(_prev: LoginState, formData: FormData): P
     },
   });
 
-  if (error) return { status: "error", message: GENERIC_ERROR };
+  if (error) {
+    // Log only the machine-readable code/status (visible in Vercel → Logs); never the email or the token.
+    console.error("signInWithOtp failed:", error.code ?? "no_code", error.status ?? "no_status");
+    return { status: "error", message: messageFor(error.code) };
+  }
   return { status: "sent", message: "Check your inbox: we sent you a sign-in link." };
 }
