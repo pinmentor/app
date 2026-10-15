@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { z } from "zod";
+import { AdminNav } from "@/app/admin/admin-nav";
 import { requireAdmin } from "@/lib/admin/guard";
 import { newIdempotencyKey } from "@/lib/admin/keys";
 import { canAdjustCredits } from "@/lib/admin/roles";
@@ -61,6 +62,7 @@ export default async function AdminUsersPage({
         <h1 className="text-2xl font-semibold tracking-tight">Users</h1>
         <span className="text-xs uppercase tracking-wide text-neutral-500">{role}</span>
       </header>
+      <AdminNav current="users" />
 
       {notice ? (
         <p role="status" className={notice.ok ? "text-sm text-green-700" : "text-sm text-red-600"}>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canAdjustCredits, isAdminRole } from "./roles";
+import { canAdjustCredits, canEnqueueTestJobs, canManageJobs, isAdminRole } from "./roles";
 import { creditAdjustSchema, userOverviewRowSchema } from "./schemas";
 
 const WS = "11111111-1111-4111-8111-111111111111";
@@ -53,5 +53,18 @@ describe("userOverviewRowSchema", () => {
       total_count: 1,
     };
     expect(userOverviewRowSchema.safeParse(row).success).toBe(true);
+  });
+});
+
+describe("job permissions", () => {
+  it("superadmin and support may retry/cancel jobs", () => {
+    expect(canManageJobs("superadmin")).toBe(true);
+    expect(canManageJobs("support")).toBe(true);
+    expect(canManageJobs("finance")).toBe(false);
+    expect(canManageJobs("analyst")).toBe(false);
+  });
+  it("only superadmin may enqueue test jobs", () => {
+    expect(canEnqueueTestJobs("superadmin")).toBe(true);
+    expect(canEnqueueTestJobs("support")).toBe(false);
   });
 });
