@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { Logo } from "@/components/brand";
 import { safeNextPath } from "@/lib/auth/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { LoginForm } from "./login-form";
@@ -23,19 +24,42 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const siteKey = process.env.TURNSTILE_SITE_KEY ?? "";
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col items-center justify-center gap-6 px-4">
-      <div className="text-center">
-        <h1 className="text-3xl font-semibold tracking-tight">Sign in to PinMentor</h1>
-        <p className="mt-2 text-sm text-neutral-600">No password needed. We email you a one-time link.</p>
-      </div>
+    <div className="pm-auth">
+      <aside className="pm-auth-aside">
+        <Logo />
+        <p className="pm-auth-line">Map the topic. Publish the posts. Pin them.</p>
+        <div className="pm-pins" aria-hidden="true">
+          <div className="pm-pin pm-pin-a">
+            <i />
+            <i />
+          </div>
+          <div className="pm-pin pm-pin-b">
+            <i />
+            <i />
+          </div>
+          <div className="pm-pin pm-pin-c">
+            <i />
+            <i />
+          </div>
+        </div>
+      </aside>
 
-      {error && CALLBACK_ERRORS[error] ? <p className="text-sm text-red-600">{CALLBACK_ERRORS[error]}</p> : null}
+      <main className="pm-auth-main">
+        <div className="pm-auth-card">
+          <div>
+            <h1>Sign in</h1>
+            <p className="pm-muted">No password needed. We email you a one-time link.</p>
+          </div>
 
-      {siteKey ? (
-        <LoginForm siteKey={siteKey} />
-      ) : (
-        <p className="text-sm text-red-600">Sign-in is not configured yet (missing TURNSTILE_SITE_KEY).</p>
-      )}
-    </main>
+          {error && CALLBACK_ERRORS[error] ? <p className="pm-note pm-note-bad">{CALLBACK_ERRORS[error]}</p> : null}
+
+          {siteKey ? (
+            <LoginForm siteKey={siteKey} />
+          ) : (
+            <p className="pm-note pm-note-bad">Sign-in is not configured yet (missing TURNSTILE_SITE_KEY).</p>
+          )}
+        </div>
+      </main>
+    </div>
   );
 }

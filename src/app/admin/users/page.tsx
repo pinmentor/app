@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { z } from "zod";
-import { AdminNav } from "@/app/admin/admin-nav";
+import { AdminShell } from "@/app/admin/admin-nav";
 import { requireAdmin } from "@/lib/admin/guard";
 import { newIdempotencyKey } from "@/lib/admin/keys";
 import { canAdjustCredits } from "@/lib/admin/roles";
@@ -57,61 +57,62 @@ export default async function AdminUsersPage({
   const pageHref = (p: number) => `/admin/users?${new URLSearchParams({ ...(q ? { q } : {}), page: String(p) }).toString()}`;
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-4 py-10">
-      <header className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Users</h1>
-        <span className="text-xs uppercase tracking-wide text-neutral-500">{role}</span>
-      </header>
-      <AdminNav current="users" />
+    <AdminShell current="users" role={role}>
+      <div className="pm-pagehead">
+        <div>
+          <h1>Users</h1>
+          <p>Every account with its workspace and credit balance.</p>
+        </div>
+      </div>
 
       {notice ? (
-        <p role="status" className={notice.ok ? "text-sm text-green-700" : "text-sm text-red-600"}>
+        <p role="status" className={notice.ok ? "pm-note pm-note-ok" : "pm-note pm-note-bad"}>
           {notice.text}
         </p>
       ) : null}
-      {loadFailed ? <p className="text-sm text-red-600">Could not load users. Check SUPABASE_SERVICE_ROLE_KEY and migration 0004.</p> : null}
+      {loadFailed ? (
+        <p className="pm-note pm-note-bad">Could not load users. Check SUPABASE_SERVICE_ROLE_KEY and migration 0004.</p>
+      ) : null}
 
-      <form action="/admin/users" method="get" className="flex gap-2">
-        <input
-          name="q"
-          defaultValue={q}
-          placeholder="Search by email"
-          className="w-full max-w-sm rounded-md border border-neutral-300 px-3 py-2 text-sm"
-        />
-        <button type="submit" className="rounded-md border border-neutral-300 px-3 py-2 text-sm">
+      <form action="/admin/users" method="get" className="pm-toolbar">
+        <input name="q" defaultValue={q} placeholder="Search by email" aria-label="Search by email" className="pm-input" />
+        <button type="submit" className="pm-btn pm-btn-quiet">
           Search
         </button>
       </form>
 
-      <div className="overflow-x-auto rounded-lg border border-neutral-200">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
+      <div className="pm-tablewrap">
+        <table className="pm-table">
+          <thead>
             <tr>
-              <th className="px-3 py-2">Email</th>
-              <th className="px-3 py-2">Role</th>
-              <th className="px-3 py-2">Workspace</th>
-              <th className="px-3 py-2 text-right">Credits</th>
-              <th className="px-3 py-2">Joined</th>
-              <th className="px-3 py-2">Last sign-in</th>
-              {mayAdjust ? <th className="px-3 py-2">Adjust credits</th> : null}
+              <th>Email</th>
+              <th>Role</th>
+              <th>Workspace</th>
+              <th className="pm-num">Credits</th>
+              <th>Joined</th>
+              <th>Last sign-in</th>
+              {mayAdjust ? <th>Adjust credits</th> : null}
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.user_id} className="border-t border-neutral-200 align-top">
-                <td className="px-3 py-2">{r.email ?? "—"}{r.suspended ? " (suspended)" : ""}</td>
-                <td className="px-3 py-2">{r.role}</td>
-                <td className="px-3 py-2">{r.workspace_name ?? "—"}</td>
-                <td className="px-3 py-2 text-right tabular-nums">
-                  {r.credits_available}
-                  {r.credits_held > 0 ? <span className="text-neutral-500"> (+{r.credits_held} held)</span> : null}
+              <tr key={r.user_id}>
+                <td>
+                  {r.email ?? "—"}
+                  {r.suspended ? " (suspended)" : ""}
                 </td>
-                <td className="px-3 py-2 whitespace-nowrap">{r.created_at.slice(0, 10)}</td>
-                <td className="px-3 py-2 whitespace-nowrap">{r.last_sign_in_at ? r.last_sign_in_at.slice(0, 10) : "—"}</td>
+                <td>{r.role}</td>
+                <td>{r.workspace_name ?? "—"}</td>
+                <td className="pm-num">
+                  {r.credits_available}
+                  {r.credits_held > 0 ? <span className="pm-muted"> (+{r.credits_held} held)</span> : null}
+                </td>
+                <td className="pm-nowrap">{r.created_at.slice(0, 10)}</td>
+                <td className="pm-nowrap">{r.last_sign_in_at ? r.last_sign_in_at.slice(0, 10) : "—"}</td>
                 {mayAdjust ? (
-                  <td className="px-3 py-2">
+                  <td>
                     {r.workspace_id ? (
-                      <form action={adjustCredits} className="flex flex-wrap items-center gap-1">
+                      <form action={adjustCredits} className="pm-inline">
                         <input type="hidden" name="workspaceId" value={r.workspace_id} />
                         <input type="hidden" name="key" value={newIdempotencyKey()} />
                         <input
@@ -120,7 +121,9 @@ export default async function AdminUsersPage({
                           step={1}
                           required
                           placeholder="±credits"
-                          className="w-24 rounded border border-neutral-300 px-2 py-1"
+                          aria-label="Credits to add or remove"
+                          className="pm-input pm-input-sm"
+                          style={{ width: "6.5rem" }}
                         />
                         <input
                           name="reason"
@@ -128,9 +131,11 @@ export default async function AdminUsersPage({
                           minLength={3}
                           maxLength={200}
                           placeholder="Reason (logged)"
-                          className="w-40 rounded border border-neutral-300 px-2 py-1"
+                          aria-label="Reason"
+                          className="pm-input pm-input-sm"
+                          style={{ width: "10rem" }}
                         />
-                        <button type="submit" className="rounded bg-neutral-900 px-2 py-1 text-white">
+                        <button type="submit" className="pm-btn pm-btn-brand pm-btn-xs">
                           Apply
                         </button>
                       </form>
@@ -143,7 +148,7 @@ export default async function AdminUsersPage({
             ))}
             {rows.length === 0 && !loadFailed ? (
               <tr>
-                <td colSpan={mayAdjust ? 7 : 6} className="px-3 py-6 text-center text-neutral-500">
+                <td colSpan={mayAdjust ? 7 : 6} className="pm-empty-row">
                   No users found.
                 </td>
               </tr>
@@ -152,15 +157,23 @@ export default async function AdminUsersPage({
         </table>
       </div>
 
-      <nav className="flex items-center justify-between text-sm">
-        <span className="text-neutral-600">
-          {total} user{total === 1 ? "" : "s"} · page {page} of {pages}
+      <nav className="pm-pager" aria-label="Pages">
+        <span>
+          {total} user{total === 1 ? "" : "s"}, page {page} of {pages}
         </span>
-        <span className="flex gap-3">
-          {page > 1 ? <Link href={pageHref(page - 1)}>← Previous</Link> : null}
-          {page < pages ? <Link href={pageHref(page + 1)}>Next →</Link> : null}
-        </span>
+        <div>
+          {page > 1 ? (
+            <Link href={pageHref(page - 1)} className="pm-btn pm-btn-quiet pm-btn-sm">
+              Previous
+            </Link>
+          ) : null}
+          {page < pages ? (
+            <Link href={pageHref(page + 1)} className="pm-btn pm-btn-quiet pm-btn-sm">
+              Next
+            </Link>
+          ) : null}
+        </div>
       </nav>
-    </main>
+    </AdminShell>
   );
 }

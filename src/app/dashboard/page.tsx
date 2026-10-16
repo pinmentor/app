@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { Coin, Logo } from "@/components/brand";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "./actions";
 
@@ -44,38 +45,54 @@ export default async function DashboardPage() {
       : [];
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-16">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-neutral-600">{user.email}</p>
+    <>
+      <header className="pm-appbar">
+        <div className="pm-wrap pm-appbar-in">
+          <Logo href="/dashboard" />
+          <div className="pm-appbar-user">
+            <span>{user.email}</span>
+            <form action={signOut}>
+              <button type="submit" className="pm-btn pm-btn-quiet pm-btn-sm">
+                Sign out
+              </button>
+            </form>
+          </div>
         </div>
-        <form action={signOut}>
-          <button type="submit" className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm">
-            Sign out
-          </button>
-        </form>
       </header>
 
-      {loadFailed ? <p className="text-sm text-red-600">Could not load your workspace. Please refresh.</p> : null}
+      <main className="pm-wrap pm-page">
+        <h1>Dashboard</h1>
 
-      <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-medium">Workspaces</h2>
-        {rows.length === 0 && !loadFailed ? <p className="text-sm text-neutral-600">No workspace yet.</p> : null}
-        {rows.map((w) => (
-          <div key={w.id} className="rounded-lg border border-neutral-200 p-4">
-            <div className="flex items-baseline justify-between">
-              <span className="font-medium">{w.name}</span>
-              <span className="text-xs uppercase tracking-wide text-neutral-500">{w.role}</span>
-            </div>
-            <p className="mt-2 text-sm text-neutral-700">
-              {w.trialCredits === null
-                ? "Trial credits are granted once your email is confirmed."
-                : `Trial credits: ${w.trialCredits}`}
-            </p>
+        {loadFailed ? <p className="pm-note pm-note-bad">Could not load your workspace. Please refresh.</p> : null}
+
+        {rows.length === 0 && !loadFailed ? (
+          <div className="pm-empty">
+            <h2>No workspace yet</h2>
+            <p>Your workspace is created when you confirm your email. Refresh this page after confirming.</p>
           </div>
+        ) : null}
+
+        {rows.map((w) => (
+          <section key={w.id} className="pm-ws">
+            <div>
+              <h2>{w.name}</h2>
+              <div className="pm-ws-meta">
+                <span className="pm-pill pm-pill-role">{w.role}</span>
+                {w.trialCredits === null ? <span>Trial credits are granted once your email is confirmed.</span> : null}
+              </div>
+            </div>
+            {w.trialCredits !== null ? (
+              <div className="pm-credit">
+                <Coin />
+                <div>
+                  <div className="pm-credit-n">{w.trialCredits}</div>
+                  <div className="pm-credit-label">Trial credits</div>
+                </div>
+              </div>
+            ) : null}
+          </section>
         ))}
-      </section>
-    </main>
+      </main>
+    </>
   );
 }

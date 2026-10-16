@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { Logo } from "@/components/brand";
 import { requireAdmin } from "@/lib/admin/guard";
 import { MfaForm } from "./mfa-form";
 
@@ -16,15 +17,23 @@ export default async function AdminMfaPage() {
   const verifiedTotp = factors?.totp?.[0];
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 px-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Two-factor authentication</h1>
-        <p className="mt-2 text-sm text-neutral-600">
-          Admin access requires a code from your authenticator app
-          {verifiedTotp ? "." : ". Set it up now: scan the QR code, then enter the 6-digit code."}
-        </p>
-      </div>
-      <MfaForm factorId={verifiedTotp?.id} />
-    </main>
+    <div className="pm-auth">
+      <aside className="pm-auth-aside">
+        <Logo href="/admin/users" />
+        <p className="pm-auth-line">Admin access needs a second key.</p>
+      </aside>
+      <main className="pm-auth-main">
+        <div className="pm-auth-card">
+          <div>
+            <h1>Two-factor authentication</h1>
+            <p className="pm-muted">
+              Admin access requires a code from your authenticator app
+              {verifiedTotp ? "." : ". Set it up now: scan the QR code, then enter the 6-digit code."}
+            </p>
+          </div>
+          <MfaForm factorId={verifiedTotp?.id} />
+        </div>
+      </main>
+    </div>
   );
 }

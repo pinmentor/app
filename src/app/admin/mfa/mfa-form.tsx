@@ -51,33 +51,33 @@ export function MfaForm({ factorId }: { factorId?: string }) {
 
   if (!activeFactorId) {
     return (
-      <div className="flex flex-col gap-3">
+      <div>
         <button
           type="button"
           onClick={startEnroll}
           disabled={busy}
-          className="rounded-md bg-neutral-900 px-4 py-2 font-medium text-white disabled:opacity-60"
+          className="pm-btn pm-btn-primary pm-btn-block"
         >
           {busy ? "Starting…" : "Set up authenticator app"}
         </button>
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        {error ? <p className="pm-note pm-note-bad">{error}</p> : null}
       </div>
     );
   }
 
   return (
-    <form onSubmit={verify} className="flex flex-col gap-4">
+    <form onSubmit={verify}>
       {enrollment ? (
-        <div className="flex flex-col items-center gap-2">
+        <div className="pm-qrbox">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={enrollment.qr} alt="Authenticator QR code" className="h-44 w-44" />
-          <p className="text-center text-xs text-neutral-600">
+          <img src={enrollment.qr} alt="Authenticator QR code" className="pm-qr-img" />
+          <p className="pm-secret">
             Can&apos;t scan? Enter this key manually: <code className="break-all">{enrollment.secret}</code>
           </p>
         </div>
       ) : null}
 
-      <label className="flex flex-col gap-1 text-sm font-medium">
+      <label className="pm-field">
         6-digit code
         <input
           inputMode="numeric"
@@ -87,18 +87,18 @@ export function MfaForm({ factorId }: { factorId?: string }) {
           required
           value={code}
           onChange={(e) => setCode(e.target.value)}
-          className="rounded-md border border-neutral-300 px-3 py-2 text-base font-normal tracking-widest outline-none focus:border-neutral-900"
+          className="pm-input pm-input-code"
         />
       </label>
 
       <button
         type="submit"
         disabled={busy || code.trim().length !== 6}
-        className="rounded-md bg-neutral-900 px-4 py-2 font-medium text-white disabled:opacity-60"
+        className="pm-btn pm-btn-primary pm-btn-block"
       >
         {busy ? "Checking…" : "Verify"}
       </button>
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="pm-note pm-note-bad">{error}</p> : null}
     </form>
   );
 }

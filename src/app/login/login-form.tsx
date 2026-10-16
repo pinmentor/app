@@ -76,8 +76,8 @@ export function LoginForm({ siteKey }: { siteKey: string }) {
   }, [state]);
 
   return (
-    <form action={formAction} className="flex w-full flex-col gap-4">
-      <label className="flex flex-col gap-1 text-left text-sm font-medium">
+    <form action={formAction}>
+      <label className="pm-field">
         Email
         <input
           type="email"
@@ -85,23 +85,23 @@ export function LoginForm({ siteKey }: { siteKey: string }) {
           required
           autoComplete="email"
           placeholder="you@example.com"
-          className="rounded-md border border-neutral-300 px-3 py-2 text-base font-normal outline-none focus:border-neutral-900"
+          className="pm-input"
         />
       </label>
 
       <input type="hidden" name="captchaToken" ref={tokenRef} defaultValue="" />
-      <div ref={widgetRef} className="min-h-[65px]" />
+      <div ref={widgetRef} className="pm-turnstile" />
 
       <button
         type="submit"
         disabled={pending}
-        className="rounded-md bg-neutral-900 px-4 py-2 font-medium text-white disabled:opacity-60"
+        className="pm-btn pm-btn-primary pm-btn-block"
       >
         {pending ? "Sending…" : "Email me a sign-in link"}
       </button>
 
       {state.message ? (
-        <p role="status" className={state.status === "error" ? "text-sm text-red-600" : "text-sm text-green-700"}>
+        <p role="status" className={state.status === "error" ? "pm-note pm-note-bad" : "pm-note pm-note-ok"}>
           {state.message}
         </p>
       ) : null}
