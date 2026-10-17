@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getProviderKey } from "@/lib/secrets/resolve";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { computeCostUsd, type PriceRow, type Usage } from "./cost";
 import { LlmError, ProviderError, type ProviderName } from "./errors";
@@ -17,10 +18,10 @@ import type { ProviderFn, ProviderResponse } from "./providers/types";
  * Credits are NOT charged here: the job that calls this holds/commits credits (see job_enqueue / job_complete).
  */
 
-const PROVIDERS: Record<ProviderName, { envKey: string; call: ProviderFn }> = {
-  anthropic: { envKey: "ANTHROPIC_API_KEY", call: callAnthropic },
-  openai: { envKey: "OPENAI_API_KEY", call: callOpenAi },
-  gemini: { envKey: "GEMINI_API_KEY", call: callGemini },
+const PROVIDERS: Record<ProviderName, { call: ProviderFn }> = {
+  anthropic: { call: callAnthropic },
+  openai: { call: callOpenAi },
+  gemini: { call: callGemini },
 };
 
 // numeric columns may arrive as numbers or strings depending on the PostgREST path; accept both
@@ -90,9 +91,14 @@ function toPrice(r: RouteRow): PriceRow {
   };
 }
 
-function apiKeyFor(provider: ProviderName): string | null {
-  const key = process.env[PROVIDERS[provider].envKey];
-  return key && key.length >= 10 ? key : null;
+/** Keys come from the encrypted admin page first, then env vars (src/lib/secrets). Resolved once per call. */
+async function resolveKeys(providers: ProviderName[]): Promise<Map<ProviderName, string>> {
+  const keys = new Map<ProviderName, string>();
+  for (const p of new Set(providers)) {
+    const key = await getProviderKey(p);
+    if (key && key.length >= 10) keys.set(p, key);
+  }
+  return keys;
 }
 
 type AttemptLog = {
@@ -155,9 +161,8 @@ export async function callLlm<S extends z.ZodType>(req: LlmRequest<S>): Promise<
   const routes = z.array(routeRowSchema).safeParse(routeRes.data);
   if (routeRes.error || !routes.success) throw new LlmError("route_lookup_failed", true);
 
-  const candidates = routes.data.filter(
-    (r) => r.provider !== req.avoidProvider && apiKeyFor(r.provider) !== null,
-  );
+  const keys = await resolveKeys(routes.data.map((r) => r.provider));
+  const candidates = routes.data.filter((r) => r.provider !== req.avoidProvider && keys.has(r.provider));
   if (candidates.length === 0) throw new LlmError("no_route", false);
 
   // 3) try the chain in order
@@ -167,7 +172,7 @@ export async function callLlm<S extends z.ZodType>(req: LlmRequest<S>): Promise<
   for (const route of candidates) {
     attempt += 1;
     const started = Date.now();
-    const key = apiKeyFor(route.provider);
+    const key = keys.get(route.provider);
     if (!key) continue;
 
     const maxOut = Math.min(req.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS, route.max_output_tokens ?? Number.MAX_SAFE_INTEGER);

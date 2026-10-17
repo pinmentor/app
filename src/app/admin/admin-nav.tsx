@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Logo } from "@/components/brand";
 import { signOut } from "@/app/dashboard/actions";
 
-type Section = "users" | "jobs";
+type Section = "users" | "jobs" | "keys";
 
 const UsersIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
@@ -14,6 +14,13 @@ const JobsIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
     <path d="M4 6h16M4 12h16M4 18h9" />
     <circle cx="18" cy="18" r="2.5" />
+  </svg>
+);
+
+const KeyIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <circle cx="8" cy="15" r="4" />
+    <path d="M11 12l9-9M16 7l3 3M14 9l2 2" />
   </svg>
 );
 
@@ -40,6 +47,7 @@ export function AdminShell({
         <nav className="pm-sidenav" aria-label="Admin">
           {link("/admin/users", "Users", "users", <UsersIcon />)}
           {link("/admin/jobs", "Jobs & LLM", "jobs", <JobsIcon />)}
+          {link("/admin/integrations", "API keys", "keys", <KeyIcon />)}
         </nav>
         <div className="pm-sidefoot">
           <span>Signed in as {role}</span>

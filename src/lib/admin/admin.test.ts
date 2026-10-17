@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canAdjustCredits, canEnqueueTestJobs, canManageJobs, isAdminRole } from "./roles";
+import { canAdjustCredits, canEnqueueTestJobs, canManageSecrets, canManageJobs, isAdminRole } from "./roles";
 import { creditAdjustSchema, userOverviewRowSchema } from "./schemas";
 
 const WS = "11111111-1111-4111-8111-111111111111";
@@ -66,5 +66,12 @@ describe("job permissions", () => {
   it("only superadmin may enqueue test jobs", () => {
     expect(canEnqueueTestJobs("superadmin")).toBe(true);
     expect(canEnqueueTestJobs("support")).toBe(false);
+  });
+});
+
+describe("secret permissions", () => {
+  it("only superadmin may add, test or remove platform API keys", () => {
+    expect(canManageSecrets("superadmin")).toBe(true);
+    for (const r of ["support", "finance", "analyst"] as const) expect(canManageSecrets(r)).toBe(false);
   });
 });

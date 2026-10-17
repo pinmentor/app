@@ -20,3 +20,8 @@ export function canManageJobs(role: AdminRole): boolean {
 export function canEnqueueTestJobs(role: AdminRole): boolean {
   return role === "superadmin";
 }
+
+/** Add, replace, test and remove platform API keys: superadmin only (they spend the platform's money). */
+export function canManageSecrets(role: AdminRole): boolean {
+  return role === "superadmin";
+}

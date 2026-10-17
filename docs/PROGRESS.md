@@ -73,9 +73,32 @@
 2. (ঐচ্ছিক, কম্পিউটারে `pnpm install` শেষে) `pnpm eval:dedup --verbose` চালিয়ে ফল মিলিয়ে দেখো।
 3. সময় পেলে একজন স্প্যানিশ-জানা মানুষকে `eval/golden/es-peinados.jsonl`-এর ১৫১টি জোড়া দেখিয়ে নিও (প্ল্যানে ঐচ্ছিক নেটিভ স্পট-চেক সুপারিশ আছে)। ভুল লেবেল পেলে `label` বদলে `status` `confirmed` করো।
 
+## Batch 04 — API কী অ্যাডমিন পেজ (`/admin/integrations`)
+**কী বদলালো:** Anthropic / OpenAI / Gemini / DataForSEO-র কী এখন Vercel env-এ না দিয়ে অ্যাডমিন থেকে যোগ, টেস্ট ও মুছে ফেলা যায় (শুধু superadmin)। Vercel env-এর পুরনো কীও কাজ করে (ফলব্যাক)। `/admin`-এর সাইডবারে "API keys" লিঙ্ক যোগ হয়েছে।
+
+**নিরাপত্তা-নকশা (CLAUDE.md-এর "secrets never reach client/logs, encrypted at rest" মেনে):**
+- কী **অ্যাপে** AES-256-GCM দিয়ে এনক্রিপ্ট হয়ে তবেই DB-তে যায় (মাস্টার কী = Vercel env `ENCRYPTION_KEY`, ৩২ বাইট base64; `.env.example`-এ আগে থেকেই ছিল)। DB ডাম্প বা SQL-এডিটর স্ক্রিনশটে কী বেরোয় না। প্রোভাইডারের নাম এনক্রিপশনের AAD-তে বাঁধা, তাই এক সারির ciphertext অন্য সারিতে কপি করলে খোলে না।
+- `platform_secrets`: RLS চালু, কোনো policy নেই, anon/authenticated-এর সব অধিকার বাতিল; শুধু `service_role` (সার্ভার)। সব লেখা SECURITY DEFINER ফাংশনে (সেখানেও superadmin আবার চেক), এবং `admin_audit`-এ লেখা হয়: প্রোভাইডার + শেষ ৪ অক্ষর, **কখনো কী বা ciphertext নয়**।
+- UI write-only: কী একবার সেভ হলে আর দেখা যায় না, শুধু বদলানো যায়। ফর্মে `type=password`, `autocomplete=off`। রিডাইরেক্ট URL-এ শুধু ছোট কোড যায়।
+- সেভের আগে এনক্রিপ্ট→ডিক্রিপ্ট রাউন্ড-ট্রিপ মিলিয়ে দেখা হয়, যাতে পড়া যায় না এমন কী কখনো কাজের কী-এর জায়গায় না বসে।
+- `callLlm()` এখন কী নেয় `src/lib/secrets` রিজলভার থেকে: আগে অ্যাডমিন-পেজের কী, না থাকলে env। ৬০ সেকেন্ড ক্যাশ; সেভ/রিমুভে ওই সার্ভার-ইনস্ট্যান্সের ক্যাশ সাথে সাথে মোছে (অন্য ইনস্ট্যান্স ≤৬০ সেকেন্ডে ধরে)। ডিক্রিপ্ট ফেল করলে (ENCRYPTION_KEY বদলে গেলে) env-এ ফলব্যাক করে পেজে "Cannot be read" দেখায়।
+- "Test connection": বিনামূল্যের read-only এন্ডপয়েন্ট (মডেল-লিস্ট / DataForSEO অ্যাকাউন্ট), টোকেন খরচ হয় না। কী হেডারে যায়, URL-এ নয়। এতে প্রমাণ হয় কী গৃহীত; অ্যাকাউন্টে ক্রেডিট আছে কি না প্রমাণ হয় না।
+
+**ফাইল:** `supabase/migrations/0007_platform_secrets.sql`, `supabase/tests/rls_0007.sql`, `supabase/tests/local/supabase_shim.sql` (শুধু লোকাল টেস্টের জন্য; Supabase-এ চালাবে না), `src/lib/secrets/*` (providers, crypto, resolver, resolve, test-connection, schemas + টেস্ট), `src/app/admin/integrations/{page,actions}`, `src/app/admin/admin-nav.tsx`, `src/app/globals.css`, `src/lib/admin/roles.ts` (+টেস্ট), `src/modules/llm/client.ts`।
+
+**যাচাই:** SQL — লোকাল Postgres 16-এ `rls_0007.sql` = **25/25 পাস** (পুরনো আসল কী থাকলে টেস্ট শেষে হুবহু ফিরিয়ে দেয়, সেটাও পরীক্ষিত)। TypeScript — ২৪টি নতুন ইউনিট-টেস্ট ছোট vitest-সদৃশ রানারে পাস (ক্রিপ্টো, রিজলভার, টেস্ট-কানেকশন, ফর্ম-স্কিমা, মাইগ্রেশনের প্রোভাইডার-তালিকার সাথে অ্যাপের মিল); `tsc --strict` দিয়ে নতুন ফাইলগুলো পরীক্ষিত (শুধু stub-জনিত অভিযোগ ছাড়া কোনো এরর নেই)। **যা যাচাই হয়নি:** আসল Next.js বিল্ড, ESLint, `admin.test.ts` (এখানে zod 3 আছে, প্রজেক্ট zod 4 ব্যবহার করে), পেজ/অ্যাকশন আসল ব্রাউজারে, এবং চারটি প্রোভাইডারের "Test connection" এন্ডপয়েন্ট (এখানে কী ও নেটওয়ার্ক নেই — প্রতিটি কী যোগের পর একবার Test চেপে দেখো)।
+
+### মালিকের করণীয় (Batch 04), ক্রমানুসারে
+1. জিপের ফাইল আপলোড → Commit; CI/Vercel সবুজ (লাল হলে এরর পেস্ট করো)।
+2. Supabase SQL Editor-এ `0007_platform_secrets.sql` **একবারই** Run (দ্বিতীয়বার চালালে `42P07` আসবে, এটা ভুল নয়)। তারপর `rls_0007.sql` Run → শেষ সারি `ALL CHECKS | 25 of 25 passed | true`।
+3. মাস্টার কী বানাও: কম্পিউটারের টার্মিনালে `openssl rand -base64 32` (অথবা Node: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`)। Vercel → Settings → Environment Variables → `ENCRYPTION_KEY` = ওই মান → **Redeploy**। মানটা নিরাপদ জায়গায় (পাসওয়ার্ড ম্যানেজার) রেখো: হারালে সেভ করা কীগুলো আবার দিতে হবে। এটা কখনো GitHub বা চ্যাটে দিও না।
+4. `/admin/integrations` খোলো → Anthropic (বা তোমার যেটা আছে) কী পেস্ট → Save → **Test connection** → "accepted" আসা চাই। OpenAI/Gemini ঐচ্ছিক ফলব্যাক। Batch 05-এ এমবেডিংয়ের জন্য OpenAI বা Gemini-র একটা লাগবে।
+5. `/admin/jobs`-এ "llm" টেস্ট-জব চালিয়ে দেখো কী অ্যাডমিন-পেজ থেকে কাজ করছে (খরচ "LLM, last 24 hours"-এ দেখা যাবে)।
+6. পুরনো Vercel env-এর কীগুলো এখনই মুছতে হবে না; অ্যাডমিন-পেজের কী অগ্রাধিকার পায়। সবকিছু ঠিক চললে env থেকে মুছে ফেলতে পারো।
+
 ## পরের ব্যাচ
-**Batch 04 (Phase 2b):** ম্যাপ-টেবিল (`projects`, `map_runs`, `facets`, `kw_candidates`, `kw_pairs`) + RLS + RLS-টেস্ট (০০০৭), এমবেডিং প্রোভাইডার (প্রোডাকশন এমবেডার; থ্রেশহোল্ড রি-টিউন), S1→S4 জব-স্টেজ (চাঙ্কড, রিজিউমেবল, ক্রেডিট-হোল্ডসহ), অ্যাডমিন থেকে ম্যাপ-রান চালানো ও গোল্ড-সেট ব্যাচ-লেবেলিং CLI।
-**যা লাগবে (Batch 04-এর আগে নয়, শুরুতে জানিও):** অন্তত একটি এমবেডিং-সক্ষম কী (OpenAI/Gemini) — কী থাকলে আসল ম্যাপ-রান ও দুই-মডেল গোল্ড-লেবেলিং চলবে। SERP-ডিপোজিট না দিলেও এগোনো যায় (গোল্ড `provisional`, SERP-পাস বাদ)।
+**Batch 05 (Phase 2b):** (১) ম্যাপ-টেবিল `projects`, `map_runs`, `facets`, `kw_candidates`, `kw_pairs` (+`golden_pairs`) — মাইগ্রেশন ০০০৮, প্রতিটিতে RLS + RLS-টেস্ট। (২) এমবেডিং: `model_registry`-তে এমবেডিং-মডেল ও দাম (কোডে হার্ডকোড নয়), `embed()` কী রিজলভার দিয়ে; লেক্সিক্যাল থ্রেশহোল্ড (`0.88/0.6`) আসল এমবেডিংয়ে রি-টিউন। (৩) S1→S4 জব-স্টেজ (চাঙ্কড, রিজিউমেবল, ক্রেডিট-হোল্ডসহ)। (৪) অ্যাডমিন থেকে ম্যাপ-রান চালানো। (৫) গোল্ড-সেট লেবেলিং CLI (দুই স্বাধীন মডেল + ঐচ্ছিক SERP-পাস)।
+**শুরুর আগে লাগবে:** `/admin/integrations`-এ অন্তত একটি এমবেডিং-সক্ষম কী (OpenAI/Gemini) ও একটি চ্যাট-মডেল কী, "Test connection" সবুজ। DataForSEO ঐচ্ছিক (না দিলে গোল্ড `provisional` থাকে)।
 
 ## খোলা সিদ্ধান্ত / ব্লকার
 - **লকফাইল ঋণ:** `pnpm-lock.yaml` এখনো পুরনো; সাময়িক ওয়ার্কঅ্যারাউন্ড `.npmrc` (`frozen-lockfile=false`) ও CI-তে `--no-frozen-lockfile`। যেকোনো কম্পিউটারে `pnpm install` চালিয়ে নতুন `pnpm-lock.yaml` কমিট করো, তারপর `.npmrc` মুছে CI-তে `--frozen-lockfile` ফেরাও।
