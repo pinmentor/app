@@ -100,8 +100,8 @@ insert into t_results (who, test, actual, expected) values
   ('registry', 'Haiku 5.5 carries its long-prompt tier (threshold/long input)',
      (select long_context_threshold || '/' || long_input_usd_per_mtok from public.llm_route_models('facet_generation') where model_key = 'anthropic.haiku-5-5'),
      '100000/0.500000'),
-  ('registry', 'every seeded route points only at known models (all 12 tasks resolve to >= 1 model)',
-     (select count(*)::text from public.llm_routes r where exists (select 1 from public.llm_route_models(r.task))), '12');
+  ('registry', 'every seeded route points only at known models (no route is left without a routable model)',
+     (select count(*)::text from public.llm_routes r where not exists (select 1 from public.llm_route_models(r.task))), '0');
 
 -- a disabled model drops out of its routes
 update public.model_registry set enabled = false where key = 'anthropic.haiku-5-5';

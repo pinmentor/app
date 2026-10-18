@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Logo } from "@/components/brand";
 import { signOut } from "@/app/dashboard/actions";
 
-type Section = "users" | "jobs" | "keys";
+type Section = "users" | "jobs" | "keys" | "maps";
 
 const UsersIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
@@ -21,6 +21,15 @@ const KeyIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <circle cx="8" cy="15" r="4" />
     <path d="M11 12l9-9M16 7l3 3M14 9l2 2" />
+  </svg>
+);
+
+const MapIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <circle cx="12" cy="5" r="2.5" />
+    <circle cx="5" cy="18" r="2.5" />
+    <circle cx="19" cy="18" r="2.5" />
+    <path d="M12 7.5v4M12 11.5l-6 4M12 11.5l6 4" />
   </svg>
 );
 
@@ -47,6 +56,7 @@ export function AdminShell({
         <nav className="pm-sidenav" aria-label="Admin">
           {link("/admin/users", "Users", "users", <UsersIcon />)}
           {link("/admin/jobs", "Jobs & LLM", "jobs", <JobsIcon />)}
+          {link("/admin/maps", "Topical maps", "maps", <MapIcon />)}
           {link("/admin/integrations", "API keys", "keys", <KeyIcon />)}
         </nav>
         <div className="pm-sidefoot">

@@ -86,3 +86,37 @@ export function score(preds: Prediction[]): Metrics {
 
 /** Thresholds a run must stay above. A change that lowers either number fails CI (PLAN 3.10). */
 export type Floor = { precision: number; recall: number };
+
+export type SweepRow = { high: number; low: number; precision: number; recall: number; fp: number; fn: number };
+
+/**
+ * Grid search of (high, low) on a set of gold pairs. Embeds once, reuses the vectors for every grid point.
+ * Only the DEV split must be passed when picking thresholds (never tune on test).
+ */
+export async function sweepThresholds(
+  pairs: GoldPair[],
+  opts: { embedder: Embedder; judge: IntentJudge; locale?: Locale; highs?: number[]; lows?: number[] },
+): Promise<SweepRow[]> {
+  const highs = opts.highs ?? [0.8, 0.84, 0.88, 0.9, 0.92, 0.94, 0.96];
+  const lows = opts.lows ?? [0.5, 0.55, 0.6, 0.65, 0.7, 0.75];
+  const rows: SweepRow[] = [];
+  for (const high of highs) {
+    for (const low of lows) {
+      if (low >= high) continue;
+      const m = score(await predictAll(pairs, { embedder: opts.embedder, judge: opts.judge, thresholds: { high, low }, locale: opts.locale }));
+      rows.push({ high, low, precision: m.precision, recall: m.recall, fp: m.fp, fn: m.fn });
+    }
+  }
+  return rows;
+}
+
+/**
+ * The grid point with the best recall among those meeting the precision floor (a false merge loses an article, a missed
+ * merge only costs a near-duplicate that the judge or the user can still merge). Ties: fewer false merges, then higher
+ * `high` (more conservative). Returns null when nothing reaches the floor.
+ */
+export function recommendThresholds(rows: SweepRow[], minPrecision: number): SweepRow | null {
+  const ok = rows.filter((r) => r.precision >= minPrecision);
+  ok.sort((a, b) => b.recall - a.recall || a.fp - b.fp || b.high - a.high || b.low - a.low);
+  return ok[0] ?? null;
+}

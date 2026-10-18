@@ -2,30 +2,11 @@ import { z } from "zod";
 import { LlmError } from "@/modules/llm/errors";
 import { callLlm } from "@/modules/llm/client";
 
-export type JobContext = {
-  jobId: string;
-  workspaceId: string;
-  type: string;
-  payload: unknown;
-  attempt: number;
-};
+import { JobError, type JobContext, type JobHandler } from "./types";
+import { mapHandlers } from "@/modules/topical-map/stages";
 
-/** Thrown by a handler to say how a failure should be treated (retry with backoff vs dead-letter). */
-export class JobError extends Error {
-  readonly code: string;
-  readonly retryable: boolean;
-  readonly retryAfterSeconds: number | null;
-
-  constructor(message: string, code: string, opts: { retryable?: boolean; retryAfterSeconds?: number } = {}) {
-    super(message);
-    this.name = "JobError";
-    this.code = code;
-    this.retryable = opts.retryable ?? true;
-    this.retryAfterSeconds = opts.retryAfterSeconds ?? null;
-  }
-}
-
-export type JobHandler = (ctx: JobContext) => Promise<Record<string, unknown>>;
+export { JobError };
+export type { JobContext, JobHandler };
 
 const noopPayload = z.object({ mode: z.enum(["ok", "fail", "fail_permanent"]) });
 const echoSchema = z.object({ echo: z.string().max(200) });
@@ -57,6 +38,9 @@ export const handlers: Record<string, JobHandler> = {
     });
     return { echo: r.data.echo, model_key: r.modelKey, cost_usd: r.costUsd };
   },
+
+  // Topical-map stages (S1-S4): src/modules/topical-map/stages.ts
+  ...mapHandlers,
 };
 
 /** Maps any thrown value to the fields job_fail() needs. Messages are sanitised: no prompts, payloads or keys. */

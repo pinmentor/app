@@ -1,6 +1,6 @@
 # PinMentor — হ্যান্ডঅফ (নতুন চ্যাটে কাজ চালিয়ে যাওয়ার জন্য)
 
-> আপডেট: ২০২৬-১০-১৭, Batch 04 শেষে। নতুন চ্যাটে এই ফাইল + সর্বশেষ রিপো-জিপ + `docs/PLAN.md` + `CLAUDE.md` + `sandbox-tools.zip` দাও।
+> আপডেট: ২০২৬-১০-১৮, Batch 05 শেষে। নতুন চ্যাটে এই ফাইল + সর্বশেষ রিপো-জিপ + `docs/PLAN.md` + `CLAUDE.md` + `sandbox-tools.zip` দাও।
 > প্রথমে `CLAUDE.md`, `docs/PROGRESS.md`, `docs/PLAN.md` পড়ো, তারপর এই ফাইলের "পরের কাজ" থেকে শুরু করো।
 
 ## ১. প্রজেক্ট এক লাইনে
@@ -22,13 +22,15 @@ PinMentor = মাল্টি-ইউজার SaaS: টপিক → যাচ�
 | 02 | LLM রেজিস্ট্রি (`callLlm`), জব কিউ + ক্রন, `/admin/jobs` | মালিক নিশ্চিত: 117/117 ও অ্যাডমিন/জবস ঠিক |
 | ডিজাইন | রঙ/টাইপ সিস্টেম (`globals.css`, `pm-` ক্লাস), হোম, লগইন, ড্যাশবোর্ড, অ্যাডমিন শেল | জিপ দেওয়া হয়েছে; Vercel বিল্ড মালিক দেখে নিশ্চিত করেননি |
 | 03 | ডেডুপ-ইঞ্জিন (S3/S4) + ইভ্যাল + গোল্ড-সেট (`provisional`) + `SerpProvider` | জিপ দেওয়া হয়েছে; CI সবুজ কি না মালিক জানাননি |
-| 04 | API কী অ্যাডমিন পেজ (`/admin/integrations`), `platform_secrets` (০০০৭) | জিপ দেওয়া হয়েছে; ০০০৭ ও `rls_0007.sql` (২৫/২৫ প্রত্যাশিত) মালিকের চালানো বাকি |
+| 04 | API কী অ্যাডমিন পেজ (`/admin/integrations`), `platform_secrets` (০০০৭) | মালিক নিশ্চিত: সব হয়েছে, টেস্ট পাস (১৭ অক্টোবর) |
+| 05 | ম্যাপ-টেবিল (০০০৮), pgvector (০০০৯), `embed()`, S1→S4 জব-স্টেজ, `/admin/maps`, সুইপ + গোল্ড-লেবেলিং CLI | জিপ দেওয়া হয়েছে; ০০০৮/০০০৯ ও টেস্ট মালিকের চালানো বাকি; **স্টেজ-হ্যান্ডলার আসল DB/API-তে অচালিত** — PROGRESS.md দেখো |
 
-মালিকের বাকি করণীয় প্রতিটি ব্যাচের জন্য `docs/PROGRESS.md`-এর "মালিকের করণীয়" অংশে। **নতুন চ্যাটের প্রথম কাজ:** মালিককে জিজ্ঞেস করো ডিজাইন, Batch 03 ও Batch 04-এর আপলোড ও CI/Vercel সবুজ কি না এবং `rls_0007.sql` ফল কী; লাল হলে এরর নিয়ে আগে ঠিক করো।
+মালিকের বাকি করণীয় প্রতিটি ব্যাচের জন্য `docs/PROGRESS.md`-এর "মালিকের করণীয়" অংশে। **নতুন চ্যাটের প্রথম কাজ:** মালিককে জিজ্ঞেস করো Batch 05-এর আপলোড/CI সবুজ কি না, `rls_0008.sql` (৬২/৬২), `pgvector_0009.sql` (১৮/১৮, আসল pgvector-এ প্রথম রান) ফল কী, এবং `/admin/maps`-এ প্রথম ছোট রানের ফল ও এরর; লাল হলে আগে ঠিক করো।
 
 ## ৪. রিপো-ম্যাপ (গুরুত্বপূর্ণ ফাইল)
 - `supabase/migrations/0001…0007` — স্কিমা। `supabase/tests/` — SQL টেস্ট ও কনকারেন্সি স্ক্রিপ্ট; `supabase/tests/local/supabase_shim.sql` — লোকাল Postgres-এ Supabase-এর নকল (শুধু টেস্টের জন্য)। `supabase/ops/schedule_jobs.sql` — pg_cron শিডিউল (মালিক চালিয়েছেন)।
 - `src/modules/llm/` — LLM-এর **একমাত্র দরজা** `callLlm()` (মডেল/দাম/রুট DB-তে; কিল-সুইচ, বাজেট-গার্ড; ফলব্যাক চেইন)। `src/modules/jobs/` — জব কিউ ক্লায়েন্ট; `/api/jobs/tick`।
+- `src/modules/topical-map/stages.ts` (S1→S4 জব-হ্যান্ডলার + `map.advance` কোঅর্ডিনেটর), `plan.ts` (বিশুদ্ধ প্ল্যানিং/সিদ্ধান্ত), `stage-config.ts` (LIMITS, থ্রেশহোল্ড), `panel.ts` (গোল্ড-প্যানেল)। `src/modules/llm/embed.ts` = এমবেডিংয়ের একমাত্র দরজা।
 - `src/modules/topical-map/` — S1/S2 প্রম্পট ও স্কিমা (`facets.ts`), S3 (`normalize.ts`, `lexicon.ts`), মডিফায়ার-ভেটো (`modifiers.ts`), `compare.ts`, `dedup.ts`, `judge.ts` (LLM ইনটেন্ট-জাজ, `callJson` ইনজেক্টেড), `serp.ts`, `embed.ts` (অফলাইন লেক্সিক্যাল বেসলাইন), `eval.ts`। ইভ্যাল: `eval/golden/es-peinados.jsonl`, `eval/floors.json`, `pnpm eval:dedup`।
 - `src/lib/secrets/` — `providers.ts`, `crypto.ts` (AES-256-GCM, `ENCRYPTION_KEY`), `resolver.ts` (পিওর) / `resolve.ts` (DB-সংযুক্ত), `test-connection.ts`, `schemas.ts`।
 - `src/lib/admin/` — `guard.ts` (`requireAdmin()`: role → 2FA aal2; অ-অ্যাডমিন 404), `roles.ts` (`canAdjustCredits`, `canManageJobs`, `canEnqueueTestJobs`, `canManageSecrets`)।
@@ -40,17 +42,18 @@ PinMentor = মাল্টি-ইউজার SaaS: টপিক → যাচ�
 - **জব কিউ:** `FOR UPDATE SKIP LOCKED`, লিজ, watchdog, dead-letter, প্রোভাইডার-ভিত্তিক কনকারেন্সি; জবের সাথে ক্রেডিট-হোল্ড। pg_cron → pg_net → `/api/jobs/tick` (Bearer `CRON_SECRET`)।
 - **অ্যাডমিন অ্যাকশন প্যাটার্ন:** `requireAdmin()` → রোল-চেক → Zod → `createAdminClient().rpc("admin_*", {p_admin, …, p_ip})` (SQL ফাংশন আবার রোল চেক করে ও `admin_audit` লেখে) → `revalidatePath` → `redirect(...?flash=code)`। ক্লায়েন্টকে কখনো ভেতরের এরর/সিক্রেট ফেরত নয়।
 - **LLM টাস্ক-রুট (০০০৫-এ সিডেড):** `facet_generation`, `keyword_generation`, `intent_judge`, `map_audit`, `qa_cross_judge`, `title_generation`, `article_write`, `article_write_premium`, `research_outline`, `pin_copy`, `image_query`, `test_echo`। ক্রস-জাজ টাস্কে `avoidProvider` দিতে হয়।
+- **ম্যাপ-রান:** `map_run_create` ক্রেডিট reserve করে, `map_run_finish` commit/release; স্টেজ-জবের নিজস্ব ক্রেডিট নেই; কোঅর্ডিনেটর পোল করে (ইভেন্ট-নির্ভর নয়); প্রতি tick-এ `map_run_watchdog`।
 - **ডেডুপ ক্রম (`compare.ts`):** exact কী → মডিফায়ার-ভেটো (niñas≠niños, corto≠largo, 5≠10 minutos, con≠sin) → parent_child (সুপারসেট; কখনো অটো-মার্জ নয়) → একই কনটেন্ট → কোসাইন (`high 0.88`, `low 0.6` — **লেক্সিক্যাল এমবেডারের জন্য**) → বর্ডারলাইন জাজ। ভুল/অনুপস্থিত জাজ-উত্তর = আলাদা রাখা।
 - **কী রিজলভার:** অ্যাডমিন-পেজের এনক্রিপ্টেড কী → না থাকলে env (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `DATAFORSEO_LOGIN/PASSWORD`)। ৬০ সেকেন্ড ক্যাশ।
 - স্প্যানিশ লোকেল ডিফল্ট `es-MX` (মালিক আমার সিদ্ধান্তে ছেড়েছেন)। স্লাগে সাল নয়, আর্টিকেলে দাম/ডিসকাউন্ট নয় (CLAUDE.md)।
 
-## ৬. পরের কাজ: Batch 05 (Phase 2b)
-শুরুর শর্ত: মালিক `/admin/integrations`-এ অন্তত একটি এমবেডিং-সক্ষম কী (OpenAI বা Gemini) ও একটি চ্যাট-মডেল কী যোগ করে "Test connection" সবুজ পেয়েছেন। (DataForSEO ঐচ্ছিক; ডিপোজিট ছাড়া গোল্ড-সেট `provisional`।)
-১. **ম্যাপ-টেবিল (০০০৮):** `projects`, `map_runs`, `facets`, `kw_candidates` (embedding `vector(1536)`), `kw_pairs` (জাজ-ক্যাশ), `golden_pairs` — PLAN §১১-এর স্কিমা। প্রতিটিতে `workspace_id` + RLS + RLS-টেস্ট (`rls_0008.sql`)। pgvector এক্সটেনশন Supabase-এ চালু করতে হবে (লোকালে শিম/স্কিপ ভেবে নাও)।
-২. **এমবেডিং:** `model_registry`-তে এমবেডিং-মডেল + দাম (যাচাই করা, তারিখসহ; কোডে হার্ডকোড নয়), `embed()` কী রিজলভার দিয়ে; খরচ লগ; থ্রেশহোল্ড আসল এমবেডিংয়ে গোল্ড-সেটের dev স্প্লিটে রি-টিউন।
-৩. **S1→S4 জব-স্টেজ:** চাঙ্কড (<৬০ সেকেন্ড), রিজিউমেবল, ক্রেডিট-হোল্ডসহ (`credit_rates`-এ ম্যাপের রেট: `১০ + ৫ × ceil(আইটেম/২৫)`)।
-৪. অ্যাডমিন থেকে ম্যাপ-রান চালানো; গোল্ড-সেট লেবেলিং CLI (দুই স্বাধীন মডেল, দ্বিমতে SERP-পাস, বাকি `uncertain`)।
-৫. পরে: S5–S10 (ইনটেন্ট/টাইপ, স্কোর, সাইলো, টাইটেল/স্লাগ, ভেরিফিকেশন রিপোর্ট)।
+## ৬. পরের কাজ: Batch 06
+শুরুর শর্ত: Batch 05-এর করণীয় (PROGRESS.md) ও প্রথম ছোট রানের ফল।
+১. প্রথম আসল রানের বাগ ঠিক (বিশেষত `stages.ts`-এর DB-I/O, PostgREST `.range()` পেজিং, `.contains()` ফিল্টার, `kw_neighbors` আসল pgvector-এ)।
+২. `eval-dedup.ts --embedder live --sweep`-এর ফল দিয়ে `REAL_EMBEDDER_THRESHOLDS` (এখন প্লেসহোল্ডার 0.92/0.65) ঠিক করা।
+৩. `scripts/label-gold.ts` চালিয়ে আসল রান থেকে `confirmed` গোল্ড-জোড়া যোগ।
+৪. S5–S10: ইনটেন্ট/টাইপ, স্কোর, সাইলো, টাইটেল/স্লাগ, ভেরিফিকেশন রিপোর্ট (`silos`, `plan_items`, `map_snapshots`, `batches` টেবিল + RLS)।
+৫. ইউজার-মুখী ম্যাপ UI (ফ্যাসেট এডিট, Split/Merge/Promote) আলাদা ব্যাচে।
 
 ## ৭. খোলা ঋণ ও সতর্কতা
 - **লকফাইল ঋণ:** `pnpm-lock.yaml` পুরনো (এই স্যান্ডবক্সে npm বন্ধ ছিল)। সাময়িক: `.npmrc` (`frozen-lockfile=false`) ও CI-তে `--no-frozen-lockfile`। কোনো কম্পিউটারে `pnpm install` চালিয়ে নতুন লকফাইল কমিট, তারপর `.npmrc` মুছে `--frozen-lockfile` ফেরানো। নতুন devDependency `tsx` (Batch 03) ওই লকফাইলেই যাবে।
@@ -58,7 +61,8 @@ PinMentor = মাল্টি-ইউজার SaaS: টপিক → যাচ�
 - গোল্ড-সেট `provisional` (এক লেবেলার, আমি; প্ল্যান ৩.১০-এর প্রোটোকল চলেনি)। test স্প্লিট পুরোপুরি অদেখা নয়। একজন স্প্যানিশ-জানা মানুষকে দিয়ে দেখানো সুপারিশকৃত।
 - DataForSEO অ্যাডাপ্টার ও চার প্রোভাইডারের "Test connection" এন্ডপয়েন্ট লাইভ যাচাই হয়নি।
 - ম্যাজিক-লিংকের "We could not send the link" (সম্ভবত Supabase বিল্ট-ইন ইমেইল রেট-লিমিট) — মালিক পরে আর উল্লেখ করেননি; নিশ্চিত নয়। দরকারে নিজস্ব SMTP সেটআপ প্রস্তাব করো।
-- `/home/claude/work/src/modules/topical-map/vector.ts` নামে একটি অজানা ফাইল আগের সেশনের ওয়ার্কস্পেসে ছিল (আমার লেখা নয়, `embed.ts`-এর সাথে মেলে না, টাইপচেক ভাঙে); জিপে দেওয়া হয়নি। রিপোতে এটা থাকলে মালিককে জিজ্ঞেস করে মুছতে বলো।
+- pgvector এই স্যান্ডবক্সে নেই: ০০০৯-এর যুক্তি real[]-স্টাব দিয়ে চালানো যায় (স্টাব রেসিপি PROGRESS-এর যাচাই-অংশে); আসল যাচাই মালিকের Supabase-এ।
+- (পুরনো) `/home/claude/work/src/modules/topical-map/vector.ts` নামে একটি অজানা ফাইল আগের সেশনের ওয়ার্কস্পেসে ছিল (আমার লেখা নয়, `embed.ts`-এর সাথে মেলে না, টাইপচেক ভাঙে); জিপে দেওয়া হয়নি। রিপোতে এটা থাকলে মালিককে জিজ্ঞেস করে মুছতে বলো।
 - মালিকের Supabase/Vercel সেটআপের তথ্য: রিপো `github.com/pinmentor/app`, ব্রাঞ্চ `main`; Vercel এনভ: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `TURNSTILE_SITE_KEY`, `CRON_SECRET`, ও Batch 04 থেকে `ENCRYPTION_KEY`।
 
 ## ৮. স্যান্ডবক্সে যাচাইয়ের পদ্ধতি (প্রতি নতুন সেশনে বদলাতে পারে; `sandbox-tools.zip` দেখো)

@@ -27,7 +27,7 @@ const PROVIDERS: Record<ProviderName, { call: ProviderFn }> = {
 // numeric columns may arrive as numbers or strings depending on the PostgREST path; accept both
 const numLike = z.preprocess((v) => (typeof v === "string" && v.trim() !== "" ? Number(v) : v), z.number());
 
-const routeRowSchema = z.object({
+export const routeRowSchema = z.object({
   pos: z.number().int(),
   model_key: z.string(),
   provider: z.enum(["anthropic", "openai", "gemini"]),
@@ -43,9 +43,9 @@ const routeRowSchema = z.object({
   long_output_usd_per_mtok: numLike.nullable(),
   long_cached_input_usd_per_mtok: numLike.nullable(),
 });
-type RouteRow = z.infer<typeof routeRowSchema>;
+export type RouteRow = z.infer<typeof routeRowSchema>;
 
-const budgetRowSchema = z.object({
+export const budgetRowSchema = z.object({
   allowed: z.boolean(),
   reason: z.string().nullable(),
 });
@@ -79,7 +79,7 @@ export type LlmResult<T> = {
 const DEFAULT_MAX_OUTPUT_TOKENS = 1024;
 const DEFAULT_TIMEOUT_MS = 40_000;
 
-function toPrice(r: RouteRow): PriceRow {
+export function toPrice(r: RouteRow): PriceRow {
   return {
     input_usd_per_mtok: r.input_usd_per_mtok,
     output_usd_per_mtok: r.output_usd_per_mtok,
@@ -92,7 +92,7 @@ function toPrice(r: RouteRow): PriceRow {
 }
 
 /** Keys come from the encrypted admin page first, then env vars (src/lib/secrets). Resolved once per call. */
-async function resolveKeys(providers: ProviderName[]): Promise<Map<ProviderName, string>> {
+export async function resolveKeys(providers: ProviderName[]): Promise<Map<ProviderName, string>> {
   const keys = new Map<ProviderName, string>();
   for (const p of new Set(providers)) {
     const key = await getProviderKey(p);
@@ -101,7 +101,7 @@ async function resolveKeys(providers: ProviderName[]): Promise<Map<ProviderName,
   return keys;
 }
 
-type AttemptLog = {
+export type AttemptLog = {
   workspaceId: string;
   jobId: string | null;
   task: string;
@@ -116,7 +116,7 @@ type AttemptLog = {
   requestId?: string | null;
 };
 
-async function logAttempt(l: AttemptLog): Promise<void> {
+export async function logAttempt(l: AttemptLog): Promise<void> {
   try {
     const { error } = await createAdminClient()
       .from("llm_calls")

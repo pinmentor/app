@@ -9,11 +9,11 @@ import { describeFailure, handlers, JobError } from "./handlers";
  * the lease expires and the watchdog re-queues the job.
  */
 
-const MAX_JOBS_PER_TICK = 5;
+const MAX_JOBS_PER_TICK = 8;
 const LEASE_SECONDS = 90;
 const HANDLER_TIMEOUT_MS = 50_000; // keeps one step under the 60s function limit
 // Per-provider running-job caps (job_claim). Tune here or move to feature_flags later.
-const PROVIDER_LIMITS = { anthropic: 4, openai: 4, gemini: 4 };
+const PROVIDER_LIMITS = { anthropic: 8, openai: 8, gemini: 8 };
 
 const claimedSchema = z.array(
   z.object({
@@ -55,6 +55,10 @@ export async function runTick(): Promise<TickSummary> {
   const wdRes = await sb.rpc("job_watchdog");
   const wd = watchdogSchema.safeParse(wdRes.data);
   if (wdRes.error) console.error("job_watchdog failed:", wdRes.error.code ?? "no_code");
+
+  // fails map runs whose stage job died or that stalled, and releases their credit hold
+  const mapWd = await sb.rpc("map_run_watchdog");
+  if (mapWd.error) console.error("map_run_watchdog failed:", mapWd.error.code ?? "no_code");
 
   const claimRes = await sb.rpc("job_claim", {
     p_worker: worker,
