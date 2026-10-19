@@ -6,17 +6,39 @@ import { z } from "zod";
  * `item` and drops the rest. Callers treat a missing item as "no answer for this one" (kept separate / flagged),
  * never as a guess. An answer with no usable item at all is still rejected, so the router can try the next model.
  */
-function unwrap(v: unknown): unknown {
-  if (Array.isArray(v) || typeof v !== "object" || v === null) return v;
-  const arrays = Object.values(v).filter(Array.isArray);
-  return arrays.length === 1 ? arrays[0] : v;
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/**
+ * JSON-mode models must answer with an object, so a list comes back in many shapes: [..], {"results":[..]},
+ * {"data":{"results":[..]}}, {"0":{..},"1":{..}} (index as key) or one bare item. All become a plain array.
+ */
+function unwrap(v: unknown, depth = 0): unknown {
+  if (Array.isArray(v) || !isObj(v)) return v;
+  const values = Object.values(v);
+  const arrays = values.filter(Array.isArray);
+  if (arrays.length === 1) return arrays[0];
+  if (depth < 2) {
+    const nested = values.filter(isObj);
+    if (nested.length === 1 && values.length === 1) return unwrap(nested[0], depth + 1);
+  }
+  if ("i" in v || "index" in v || "id" in v) return [v];
+  const keys = Object.keys(v);
+  if (keys.length > 0 && keys.every((k) => /^\d+$/.test(k)) && values.every(isObj)) return keys.map((k) => ({ i: Number(k), ...(v[k] as Record<string, unknown>) }));
+  return v;
+}
+
+/** Models name the item number differently: i, index, id, idx, n. */
+function normalizeItem(x: unknown): unknown {
+  if (!isObj(x) || x.i !== undefined) return x;
+  const alt = x.index ?? x.idx ?? x.id ?? x.n;
+  return alt === undefined ? x : { ...x, i: alt };
 }
 
 export function tolerantList<T extends z.ZodType>(item: T) {
   return z
-    .preprocess(unwrap, z.array(z.unknown()))
+    .preprocess((v) => unwrap(v), z.array(z.unknown()))
     .transform((xs) => xs.flatMap((x) => {
-      const r = item.safeParse(x);
+      const r = item.safeParse(normalizeItem(x));
       return r.success ? [r.data as z.output<T>] : [];
     }))
     .refine((a) => a.length > 0, { message: "no usable items" });

@@ -33,4 +33,11 @@ describe("tolerant LLM list answers", () => {
     expect(siloNameResponseSchema.parse([{ i: 0, name: 5 }, { i: 1, name: "Trenzas", gloss_en: "braids" }]).map((x) => x.name)).toEqual(["", "Trenzas"]);
     expect(titleResponseSchema.parse([{ i: 0, titles: ["a title here", 7, ""] }, { i: 1 }]).length).toBe(1);
   });
+  it("understands the other list shapes JSON-mode models use", () => {
+    const one = { verdict: "same", reason: "r" };
+    expect(judgeResponseSchema.parse({ data: { results: [{ i: 0, ...one }] } }).length).toBe(1);
+    expect(judgeResponseSchema.parse({ "0": one, "1": { verdict: "different" } }).map((x) => x.i)).toEqual([0, 1]);
+    expect(judgeResponseSchema.parse({ i: 4, ...one }).map((x) => x.i)).toEqual([4]);
+    expect(judgeResponseSchema.parse([{ index: 2, ...one }, { id: "3", ...one }]).map((x) => x.i)).toEqual([2, 3]);
+  });
 });

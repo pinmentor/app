@@ -50,6 +50,8 @@ export function extractJson(raw: string): JsonExtract {
 export function invalidReason(text: string, outputTokens: number, maxOut: number, jsonOk: boolean): string {
   if (outputTokens >= maxOut * 0.95) return "invalid_output:truncated";
   if (text.trim() === "") return "invalid_output:empty";
-  if (!jsonOk) return "invalid_output:not_json";
-  return "invalid_output:schema";
+  // First characters of the answer ride along for now: the real shape of a bad answer is what the next fix needs.
+  const head = text.replace(/\s+/g, " ").trim().slice(0, 200);
+  if (!jsonOk) return `invalid_output:not_json|${head}`;
+  return `invalid_output:schema|${head}`;
 }

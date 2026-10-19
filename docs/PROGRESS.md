@@ -198,3 +198,6 @@ CI (zod 4) failed 10 tests: a missing key on `z.unknown().transform(...)` (e.g. 
 
 ### Fix 3 (real run: OpenAI invalid_output)
 llm_calls showed only `openai.gpt-6-1-sol` (the only key set), mostly `invalid_output`, one `ok`. Hypothesis (unconfirmed): a reasoning model spends `max_completion_tokens` on hidden thinking, so the visible JSON is cut or empty at 3000. Changes: output budgets raised (judge/classify/titles 8000, QA 6000, silo names 4000; only used tokens are billed); `invalid_output` rows now carry the reason in `error_code` (`invalid_output:truncated|empty|not_json|schema`). Check with: `select error_code, output_tokens, count(*) from llm_calls where task='intent_judge' group by 1,2 order by 3 desc;`.
+
+### Fix 4 (real run)
+The truncation hypothesis of Fix 3 was REFUTED by the owner's data: failing answers were 87–863 output tokens (budget 3000). OpenAI is called in JSON mode (top-level must be an object), so lists likely come back in other shapes. `tolerantList` now also accepts {data:{results:[..]}}, {"0":{..},"1":{..}}, one bare item, and item numbers named index/id/idx/n. Still a hypothesis: the true shape is unknown. `invalid_output:schema|<first 200 chars>` in `llm_calls.error_code` is TEMPORARY debug output; remove once the shape is known.
