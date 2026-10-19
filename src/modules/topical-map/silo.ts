@@ -122,7 +122,7 @@ const LANG: Record<Locale, string> = { "es-MX": "Mexican Spanish", "es-US": "US 
 
 export function siloNamePrompt(topic: string, locale: Locale, silos: { pillar: string; sample: string[] }[]): { system: string; prompt: string } {
   return {
-    system: `You name the content silos (topic clusters) of a ${LANG[locale]} blog. For each silo give a short, natural name (2-5 words, ${LANG[locale]}, title case, no year, no brand) and a one-line gloss in English and in Bengali explaining what the silo covers. Return only JSON: [{"i":0,"name":"","gloss_en":"","gloss_bn":""}], one object per silo, same order.`,
+    system: `You name the content silos (topic clusters) of a ${LANG[locale]} blog. For each silo give a short, natural name (2-5 words, ${LANG[locale]}, title case, no year, no brand) and a one-line gloss in English and in Bengali explaining what the silo covers. Return only one JSON object of the form {"results":[{"i":0,"name":"","gloss_en":"","gloss_bn":""}]} with one entry per silo, same order.`,
     prompt: `Topic: ${topic}\n${silos.map((s, i) => `${i}. pillar: "${s.pillar}" | examples: ${s.sample.map((x) => `"${x}"`).join(", ")}`).join("\n")}`,
   };
 }

@@ -71,7 +71,7 @@ export function classifyPrompt(topic: string, locale: Locale, keywords: string[]
 - pinterest_fit: 1-5, how visual and pin-worthy the topic is (5 = great photos).
 - seasonality: 0 = year-round, 1 = mild seasonal, 2 = strongly seasonal (weddings, holidays, back to school).
 - mixed: true only when the keyword clearly carries two different intents.
-Return only JSON: [{"i":0,"intent":"","funnel":"","demand":3,"pinterest_fit":3,"seasonality":0,"mixed":false}], one object per keyword, same order.`,
+Return only one JSON object of the form {"results":[{"i":0,"intent":"","funnel":"","demand":3,"pinterest_fit":3,"seasonality":0,"mixed":false}]} with one entry per keyword, same order.`,
     prompt: `Topic: ${topic}\n${keywords.map((k, i) => `${i}. ${k}`).join("\n")}`,
   };
 }

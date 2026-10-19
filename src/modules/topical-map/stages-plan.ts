@@ -461,7 +461,7 @@ async function runLanguageQa(ctx: JobContext, run: Run, producers: string[], sam
   try {
     const r = await callLlm({
       task: "qa_cross_judge", workspaceId: ctx.workspaceId, jobId: ctx.jobId, maxOutputTokens: 6000, temperature: 0, schema: qaResponseSchema, ...(avoid ? { avoidProvider: avoid } : {}),
-      system: `You are a native ${lang} language reviewer. For each keyword and title decide if it is natural ${lang} for its audience. Flag (ok=false, short issue) English leakage (brand names are fine), vocabulary of another region, garbled or unnatural phrasing, grammar errors. Return only JSON: [{"i":0,"ok":true,"issue":""}], one object per line, same order.`,
+      system: `You are a native ${lang} language reviewer. For each keyword and title decide if it is natural ${lang} for its audience. Flag (ok=false, short issue) English leakage (brand names are fine), vocabulary of another region, garbled or unnatural phrasing, grammar errors. Return only one JSON object of the form {"results":[{"i":0,"ok":true,"issue":""}]} with one entry per line, same order.`,
       prompt: sample.map((s, i) => `${i}. keyword: "${s.keyword}" | title: "${s.title ?? ""}"`).join("\n"),
     });
     if (producers.includes(r.provider)) return { ran: false, reason: "only a model of the same provider as the producer was available", sampled: 0, flagged: [] };

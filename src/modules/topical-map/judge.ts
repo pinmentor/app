@@ -27,7 +27,7 @@ Answer one of: same | parent_child | related | different.
 - related: same topic, but two different pages.
 - different: different intent or unrelated.
 Modifiers change the intent: para niñas, para niños and para mujeres are different; fáciles is not elegantes; con plancha is not sin plancha; numbers and times (en 5 minutos) matter.
-Return only JSON: [{"i":0,"verdict":"same","reason":"short"}], one object per pair, same order.`;
+Return only one JSON object of the form {"results":[{"i":0,"verdict":"same","reason":"short"}]} with one entry per pair, same order.`;
 
 export function buildJudgePrompt(pairs: JudgeInput[]): string {
   return pairs.map((p, i) => `${i}. "${p.a}" | "${p.b}"`).join("\n");

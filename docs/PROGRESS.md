@@ -201,3 +201,6 @@ llm_calls showed only `openai.gpt-6-1-sol` (the only key set), mostly `invalid_o
 
 ### Fix 4 (real run)
 The truncation hypothesis of Fix 3 was REFUTED by the owner's data: failing answers were 87–863 output tokens (budget 3000). OpenAI is called in JSON mode (top-level must be an object), so lists likely come back in other shapes. `tolerantList` now also accepts {data:{results:[..]}}, {"0":{..},"1":{..}}, one bare item, and item numbers named index/id/idx/n. Still a hypothesis: the true shape is unknown. `invalid_output:schema|<first 200 chars>` in `llm_calls.error_code` is TEMPORARY debug output; remove once the shape is known.
+
+### Fix 5 (real run, cause found)
+The debug rows showed OpenAI answering the judge with junk objects (`{"unused":true}`, `{"error":"invalid_output"}`, `{"0":""}`). Cause: `callLlm` always sends `json:true` (OpenAI `json_object` mode = top-level object) while the list prompts asked for a top-level array. Prompts for judge, classify, silo names, titles and language QA now ask for `{"results":[...]}`; the reader already unwraps it. Not yet confirmed on the real API. The `invalid_output:<why>|<head>` debug stays until a real run passes.
