@@ -3,7 +3,7 @@ import { getProviderKey } from "@/lib/secrets/resolve";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { computeCostUsd, type PriceRow, type Usage } from "./cost";
 import { LlmError, ProviderError, type ProviderName } from "./errors";
-import { extractJson } from "./json";
+import { extractJson, invalidReason } from "./json";
 import { callAnthropic } from "./providers/anthropic";
 import { callGemini } from "./providers/gemini";
 import { callOpenAi } from "./providers/openai";
@@ -234,7 +234,7 @@ export async function callLlm<S extends z.ZodType>(req: LlmRequest<S>): Promise<
     }
 
     anyRetryable = true; // a re-run may well produce valid output
-    await logAttempt({ workspaceId: req.workspaceId, jobId: req.jobId ?? null, task: req.task, route, attempt, status: "invalid_output", errorCode: "invalid_output", usage, costUsd, latencyMs, requestId: resp.requestId });
+    await logAttempt({ workspaceId: req.workspaceId, jobId: req.jobId ?? null, task: req.task, route, attempt, status: "invalid_output", errorCode: invalidReason(resp.text, resp.outputTokens, maxOut, extracted.ok), usage, costUsd, latencyMs, requestId: resp.requestId });
   }
 
   throw new LlmError("all_models_failed", anyRetryable);

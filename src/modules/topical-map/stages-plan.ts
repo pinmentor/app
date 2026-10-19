@@ -132,7 +132,7 @@ const s5classify: JobHandler = async (ctx) => {
   if (rows.length === 0) return { classified: 0 };
 
   const p = classifyPrompt(run.topic, run.locale, rows.map((r) => r.raw));
-  const r = await callLlm({ task: "intent_classification", workspaceId: ctx.workspaceId, jobId: ctx.jobId, system: p.system, prompt: p.prompt, schema: classifyResponseSchema, maxOutputTokens: 4000, temperature: 0 });
+  const r = await callLlm({ task: "intent_classification", workspaceId: ctx.workspaceId, jobId: ctx.jobId, system: p.system, prompt: p.prompt, schema: classifyResponseSchema, maxOutputTokens: 8000, temperature: 0 });
   const byIndex = new Map(r.data.map((x) => [x.i, x]));
 
   let missing = 0;
@@ -216,7 +216,7 @@ const s6silos: JobHandler = async (ctx) => {
     named.map(async (part) => {
       const p = siloNamePrompt(run.topic, locale, part.map((gi) => ({ pillar: rawOf(pillars[gi]!), sample: groups[gi]!.filter((i) => i !== pillars[gi]).slice(0, 5).map(rawOf) })));
       try {
-        const r = await callLlm({ task: "silo_naming", workspaceId: ctx.workspaceId, jobId: ctx.jobId, system: p.system, prompt: p.prompt, schema: siloNameResponseSchema, maxOutputTokens: 2000, temperature: 0.3 });
+        const r = await callLlm({ task: "silo_naming", workspaceId: ctx.workspaceId, jobId: ctx.jobId, system: p.system, prompt: p.prompt, schema: siloNameResponseSchema, maxOutputTokens: 4000, temperature: 0.3 });
         nameCost += r.costUsd;
         for (const a of r.data) {
           const gi = part[a.i];
@@ -320,7 +320,7 @@ const s7titles: JobHandler = async (ctx) => {
   if (rows.length === 0) return { titled: 0 };
 
   const p = titlePrompt(run.topic, locale, rows.map((r) => ({ keyword: r.keyword, type: r.article_type, listCount: r.list_count })));
-  const r = await callLlm({ task: "title_generation", workspaceId: ctx.workspaceId, jobId: ctx.jobId, system: p.system, prompt: p.prompt, schema: titleResponseSchema, maxOutputTokens: 4000, temperature: 0.7 });
+  const r = await callLlm({ task: "title_generation", workspaceId: ctx.workspaceId, jobId: ctx.jobId, system: p.system, prompt: p.prompt, schema: titleResponseSchema, maxOutputTokens: 8000, temperature: 0.7 });
   const byIndex = new Map(r.data.map((x) => [x.i, x]));
 
   let fallbacks = 0;
@@ -434,7 +434,7 @@ async function runAudit(ctx: JobContext, runId: string, producers: string[], lab
     const r = await callLlm({
       task: "map_audit", workspaceId: ctx.workspaceId, jobId: ctx.jobId, system: JUDGE_SYSTEM,
       prompt: buildJudgePrompt(sample.map((s) => ({ a: labelOf.get(s.a) ?? s.a, b: labelOf.get(s.b) ?? s.b }))),
-      schema: judgeResponseSchema, maxOutputTokens: 3000, temperature: 0, ...(avoid ? { avoidProvider: avoid } : {}),
+      schema: judgeResponseSchema, maxOutputTokens: 8000, temperature: 0, ...(avoid ? { avoidProvider: avoid } : {}),
     });
     if (producers.includes(r.provider)) return { ran: false, reason: "only a model of the same provider as the producer was available", ...empty };
     const answer = new Map(r.data.map((x) => [x.i, x]));
@@ -460,7 +460,7 @@ async function runLanguageQa(ctx: JobContext, run: Run, producers: string[], sam
   const avoid = asProvider(producers[0]);
   try {
     const r = await callLlm({
-      task: "qa_cross_judge", workspaceId: ctx.workspaceId, jobId: ctx.jobId, maxOutputTokens: 3000, temperature: 0, schema: qaResponseSchema, ...(avoid ? { avoidProvider: avoid } : {}),
+      task: "qa_cross_judge", workspaceId: ctx.workspaceId, jobId: ctx.jobId, maxOutputTokens: 6000, temperature: 0, schema: qaResponseSchema, ...(avoid ? { avoidProvider: avoid } : {}),
       system: `You are a native ${lang} language reviewer. For each keyword and title decide if it is natural ${lang} for its audience. Flag (ok=false, short issue) English leakage (brand names are fine), vocabulary of another region, garbled or unnatural phrasing, grammar errors. Return only JSON: [{"i":0,"ok":true,"issue":""}], one object per line, same order.`,
       prompt: sample.map((s, i) => `${i}. keyword: "${s.keyword}" | title: "${s.title ?? ""}"`).join("\n"),
     });

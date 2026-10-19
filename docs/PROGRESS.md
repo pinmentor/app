@@ -195,3 +195,6 @@
 
 ### Fix 2 (CI, zod 4)
 CI (zod 4) failed 10 tests: a missing key on `z.unknown().transform(...)` (e.g. `reason`, `gloss_en`, `mixed`) rejected the whole item in zod 4 (zod 3 accepted it). Fixed with `withKeys` in `tolerant.ts`, which fills missing keys with null before validation; applied to judge, classify, silo-name, title and QA schemas. Verified: all topical-map tests pass under zod 3.25 and its `zod/v4` build; NOT verified against the exact zod 4.x of the repo (registry blocked in the sandbox) — CI is the check.
+
+### Fix 3 (real run: OpenAI invalid_output)
+llm_calls showed only `openai.gpt-6-1-sol` (the only key set), mostly `invalid_output`, one `ok`. Hypothesis (unconfirmed): a reasoning model spends `max_completion_tokens` on hidden thinking, so the visible JSON is cut or empty at 3000. Changes: output budgets raised (judge/classify/titles 8000, QA 6000, silo names 4000; only used tokens are billed); `invalid_output` rows now carry the reason in `error_code` (`invalid_output:truncated|empty|not_json|schema`). Check with: `select error_code, output_tokens, count(*) from llm_calls where task='intent_judge' group by 1,2 order by 3 desc;`.

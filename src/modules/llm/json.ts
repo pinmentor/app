@@ -41,3 +41,15 @@ export function extractJson(raw: string): JsonExtract {
   }
   return { ok: false };
 }
+
+/**
+ * Why an answer was unusable, as a short code kept in llm_calls.error_code ("invalid_output:<why>"), so a bad run can be
+ * diagnosed from the admin SQL without storing the model's text. truncated = the model used (almost) its whole output
+ * budget, typical for reasoning models whose hidden thinking counts against it.
+ */
+export function invalidReason(text: string, outputTokens: number, maxOut: number, jsonOk: boolean): string {
+  if (outputTokens >= maxOut * 0.95) return "invalid_output:truncated";
+  if (text.trim() === "") return "invalid_output:empty";
+  if (!jsonOk) return "invalid_output:not_json";
+  return "invalid_output:schema";
+}

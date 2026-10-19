@@ -244,7 +244,7 @@ const s4judge: JobHandler = async (ctx) => {
   let cost = 0;
   const providers = new Set<string>();
   const judge = llmIntentJudge(async (req) => {
-    const r = await callLlm({ task: "intent_judge", workspaceId: ctx.workspaceId, jobId: ctx.jobId, system: req.system, prompt: req.prompt, schema: judgeResponseSchema, maxOutputTokens: 3000, temperature: 0 });
+    const r = await callLlm({ task: "intent_judge", workspaceId: ctx.workspaceId, jobId: ctx.jobId, system: req.system, prompt: req.prompt, schema: judgeResponseSchema, maxOutputTokens: 8000, temperature: 0 });
     cost += r.costUsd;
     providers.add(r.provider);
     return r.data;
