@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Verdict } from "./compare";
-import { verdictSchema } from "./schemas";
+import { judgeResponseSchema } from "./schemas";
 
 /**
  * Gold-set labelling protocol (PLAN §3.10): two independent models (different providers) label every pair.
@@ -20,7 +20,7 @@ export function reconcile(a: Verdict, b: Verdict, serp?: { common: number } | nu
   return { label: "uncertain", basis: "unresolved" };
 }
 
-export const labelResponseSchema = z.array(z.object({ i: z.number().int().min(0), verdict: verdictSchema, reason: z.string().max(300) }));
+export const labelResponseSchema = judgeResponseSchema;
 
 /** Deterministic dev/test assignment from the pair text, so re-running never moves a pair between splits. */
 export function splitFor(a: string, b: string): "dev" | "test" {

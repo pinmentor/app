@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Locale } from "./lexicon";
+import { tolerantList } from "./tolerant";
 
 /**
  * S5: intent, funnel stage, article type (PLAN §3.8). The LLM judges; cheap rules only cross-check it, so a keyword the
@@ -23,15 +24,15 @@ const clampInt = (lo: number, hi: number, fallback: number) => (v: unknown): num
 
 /** Tolerant like the facet schema: an odd label is cleaned (unknown intent -> informational + flagged), never a rejected answer. */
 export const classifyItemSchema = z.object({
-  i: z.number().int().min(0),
-  intent: z.string().default("informational"),
-  funnel: z.string().default("awareness"),
+  i: z.coerce.number().int().min(0),
+  intent: z.unknown().transform((v) => (typeof v === "string" ? v : "informational")),
+  funnel: z.unknown().transform((v) => (typeof v === "string" ? v : "awareness")),
   demand: z.unknown().optional(),
   pinterest_fit: z.unknown().optional(),
   seasonality: z.unknown().optional(),
-  mixed: z.boolean().optional(),
+  mixed: z.unknown().transform((v) => v === true || v === "true"),
 });
-export const classifyResponseSchema = z.array(classifyItemSchema).min(1);
+export const classifyResponseSchema = tolerantList(classifyItemSchema);
 
 export type Classified = {
   intent: Intent;
@@ -44,7 +45,7 @@ export type Classified = {
   unknownLabel: boolean;
 };
 
-export function cleanClassification(r: z.infer<typeof classifyItemSchema>): Classified {
+export function cleanClassification(r: z.output<typeof classifyItemSchema>): Classified {
   const intent = pick(INTENTS, r.intent, "informational");
   const unknownIntent = !(INTENTS as readonly string[]).includes(r.intent.trim().toLowerCase().replace(/[\s-]+/g, "_"));
   return {
@@ -53,7 +54,7 @@ export function cleanClassification(r: z.infer<typeof classifyItemSchema>): Clas
     demandTier: clampInt(1, 5, 3)(r.demand),
     pinterestFit: clampInt(1, 5, 3)(r.pinterest_fit),
     seasonality: clampInt(0, 2, 0)(r.seasonality),
-    mixed: r.mixed === true,
+    mixed: r.mixed,
     unknownLabel: unknownIntent,
   };
 }

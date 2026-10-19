@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { slugify } from "@/lib/slugify";
 import type { Locale } from "./lexicon";
+import { shortText, tolerantList } from "./tolerant";
 
 /**
  * S8: titles, slugs (PLAN §3.8). Titles: 3 options per item; Type A carries a list number N chosen HERE (seeded
@@ -69,19 +70,17 @@ export function titlePrompt(topic: string, locale: Locale, items: TitleItem[]): 
   };
 }
 
-const gloss = z.string().optional().transform((v) => (v ?? "").trim().slice(0, 300));
-export const titleResponseSchema = z
-  .array(
-    z.object({
-      i: z.number().int().min(0),
-      titles: z.array(z.string()).transform((ts) => ts.map((t) => t.trim()).filter((t) => t.length > 0)),
-      keyword_gloss_en: gloss,
-      keyword_gloss_bn: gloss,
-      title_gloss_en: gloss,
-      title_gloss_bn: gloss,
-    }),
-  )
-  .min(1);
+const gloss = z.unknown().transform(shortText(300));
+export const titleResponseSchema = tolerantList(
+  z.object({
+    i: z.coerce.number().int().min(0),
+    titles: z.array(z.unknown()).transform((ts) => ts.flatMap((x) => (typeof x === "string" && x.trim().length > 0 ? [x.trim()] : []))),
+    keyword_gloss_en: gloss,
+    keyword_gloss_bn: gloss,
+    title_gloss_en: gloss,
+    title_gloss_bn: gloss,
+  }),
+);
 
 const YEAR = /\b(19|20)\d{2}\b/;
 const MONEY = /[$€£¥]|\b(pesos?|d[oó]lares?|euros?|usd|mxn|eur)\b|\b\d+\s?%/i;
