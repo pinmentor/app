@@ -12,7 +12,7 @@ import { judgeResponseSchema } from "./schemas";
 import { scoreItem } from "./score";
 import { clusterSilos, foldEdges, pickPillar, siloNameOrFallback, siloNamePrompt, siloNameResponseSchema, type Edge } from "./silo";
 import { LIMITS, listRangeFor, thresholdsFor } from "./stage-config";
-import { shortText, tolerantList } from "./tolerant";
+import { shortText, tolerantList, withKeys } from "./tolerant";
 import { basePayload, db, enqueue, enqueueAdvance, failRun, liveRun, loadCandidates, parsePayload, readAll, rpc, setStage, uuid, type Run } from "./stage-kit";
 import { assignListCounts, buildSlugs, cleanTitles, targetWords, titlePrompt, titleResponseSchema } from "./titles";
 import {
@@ -397,7 +397,7 @@ const planVerify = z.object({
   id: uuid, primary_kw_id: uuid, keyword: z.string(), variants: z.array(z.string()), title: z.string().nullable(), title_options: z.array(z.string()), slug: z.string().nullable(),
   article_type: z.enum(["A", "B"]), list_count: z.number().int().nullable(), silo_id: uuid.nullable(), intent: z.string().nullable(), flags: z.array(z.string()),
 });
-const qaResponseSchema = tolerantList(z.object({ i: z.coerce.number().int().min(0), ok: z.unknown().transform((v) => v === true || v === "true"), issue: z.unknown().transform(shortText(200)) }));
+const qaResponseSchema = tolerantList(withKeys(["ok", "issue"], z.object({ i: z.coerce.number().int().min(0), ok: z.unknown().transform((v) => v === true || v === "true"), issue: z.unknown().transform(shortText(200)) })));
 
 /** Providers that produced this run's judgements and titles (from the jobs' results): the independent checks must avoid them. */
 async function producerProviders(runId: string): Promise<string[]> {

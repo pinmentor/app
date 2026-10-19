@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { slugify } from "@/lib/slugify";
 import type { Locale } from "./lexicon";
-import { shortText, tolerantList } from "./tolerant";
+import { shortText, tolerantList, withKeys } from "./tolerant";
 
 /**
  * S8: titles, slugs (PLAN §3.8). Titles: 3 options per item; Type A carries a list number N chosen HERE (seeded
@@ -72,14 +72,14 @@ export function titlePrompt(topic: string, locale: Locale, items: TitleItem[]): 
 
 const gloss = z.unknown().transform(shortText(300));
 export const titleResponseSchema = tolerantList(
-  z.object({
+  withKeys(["keyword_gloss_en", "keyword_gloss_bn", "title_gloss_en", "title_gloss_bn"], z.object({
     i: z.coerce.number().int().min(0),
     titles: z.array(z.unknown()).transform((ts) => ts.flatMap((x) => (typeof x === "string" && x.trim().length > 0 ? [x.trim()] : []))),
     keyword_gloss_en: gloss,
     keyword_gloss_bn: gloss,
     title_gloss_en: gloss,
     title_gloss_bn: gloss,
-  }),
+  })),
 );
 
 const YEAR = /\b(19|20)\d{2}\b/;

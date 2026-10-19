@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Locale } from "./lexicon";
-import { shortText, tolerantList } from "./tolerant";
+import { shortText, tolerantList, withKeys } from "./tolerant";
 
 /**
  * S6/S7: silo architecture (PLAN §3.8). Average-linkage agglomerative clustering over the sparse nearest-neighbour
@@ -128,12 +128,12 @@ export function siloNamePrompt(topic: string, locale: Locale, silos: { pillar: s
 }
 
 export const siloNameResponseSchema = tolerantList(
-  z.object({
+  withKeys(["name", "gloss_en", "gloss_bn"], z.object({
     i: z.coerce.number().int().min(0),
     name: z.unknown().transform(shortText(120)),
     gloss_en: z.unknown().transform(shortText(300)),
     gloss_bn: z.unknown().transform(shortText(300)),
-  }),
+  })),
 );
 
 /** A name from the model, or the pillar keyword capitalised when the model gave none (never an empty silo name). */

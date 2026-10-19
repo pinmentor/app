@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Locale } from "./lexicon";
-import { tolerantList } from "./tolerant";
+import { tolerantList, withKeys } from "./tolerant";
 
 /**
  * S5: intent, funnel stage, article type (PLAN §3.8). The LLM judges; cheap rules only cross-check it, so a keyword the
@@ -23,7 +23,7 @@ const clampInt = (lo: number, hi: number, fallback: number) => (v: unknown): num
 };
 
 /** Tolerant like the facet schema: an odd label is cleaned (unknown intent -> informational + flagged), never a rejected answer. */
-export const classifyItemSchema = z.object({
+const classifyItemObject = z.object({
   i: z.coerce.number().int().min(0),
   intent: z.unknown().transform((v) => (typeof v === "string" ? v : "informational")),
   funnel: z.unknown().transform((v) => (typeof v === "string" ? v : "awareness")),
@@ -32,6 +32,7 @@ export const classifyItemSchema = z.object({
   seasonality: z.unknown().optional(),
   mixed: z.unknown().transform((v) => v === true || v === "true"),
 });
+export const classifyItemSchema = withKeys(["intent", "funnel", "mixed"], classifyItemObject);
 export const classifyResponseSchema = tolerantList(classifyItemSchema);
 
 export type Classified = {
@@ -45,7 +46,7 @@ export type Classified = {
   unknownLabel: boolean;
 };
 
-export function cleanClassification(r: z.output<typeof classifyItemSchema>): Classified {
+export function cleanClassification(r: z.output<typeof classifyItemObject>): Classified {
   const intent = pick(INTENTS, r.intent, "informational");
   const unknownIntent = !(INTENTS as readonly string[]).includes(r.intent.trim().toLowerCase().replace(/[\s-]+/g, "_"));
   return {

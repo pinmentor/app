@@ -22,6 +22,20 @@ export function tolerantList<T extends z.ZodType>(item: T) {
     .refine((a) => a.length > 0, { message: "no usable items" });
 }
 
+/**
+ * Zod 4 rejects an object whose key is missing when that key is `z.unknown().transform(...)` (zod 3 let it through), so
+ * a model that leaves out a gloss would lose the whole item. Missing keys are filled with null first; the transform
+ * then turns null into its default. Works the same in every zod version.
+ */
+export function withKeys<T extends z.ZodType>(keys: readonly string[], schema: T) {
+  return z.preprocess((v) => {
+    if (typeof v !== "object" || v === null || Array.isArray(v)) return v;
+    const filled: Record<string, unknown> = {};
+    for (const k of keys) filled[k] = null;
+    return { ...filled, ...(v as Record<string, unknown>) };
+  }, schema);
+}
+
 /** "Parent-Child", " same " -> parent_child, same. */
 export const cleanLabel = (v: unknown): unknown => (typeof v === "string" ? v.trim().toLowerCase().replace(/[\s-]+/g, "_") : v);
 export const shortText = (max: number) => (v: unknown): string => (typeof v === "string" ? v.trim().slice(0, max) : "");

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { cleanLabel, shortText, tolerantList } from "./tolerant";
+import { cleanLabel, shortText, tolerantList, withKeys } from "./tolerant";
 
 export const verdictSchema = z.enum(["same", "parent_child", "related", "different"]);
 
@@ -29,10 +29,10 @@ export const goldPairSchema = z.object({
 });
 export type GoldPair = z.infer<typeof goldPairSchema>;
 
-export const judgeItemSchema = z.object({
+export const judgeItemSchema = withKeys(["reason"], z.object({
   i: z.coerce.number().int().min(0),
   verdict: z.preprocess(cleanLabel, verdictSchema),
   reason: z.unknown().transform(shortText(300)),
-});
+}));
 /** Tolerant: an item with an unknown verdict is dropped and the caller keeps that pair separate (never a guessed merge). */
 export const judgeResponseSchema = tolerantList(judgeItemSchema);
