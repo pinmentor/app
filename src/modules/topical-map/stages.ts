@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { JobError, type JobContext, type JobHandler } from "@/modules/jobs/types";
 import { callLlm } from "@/modules/llm/client";
 import { embedTexts } from "@/modules/llm/embed";
@@ -11,10 +10,15 @@ import { llmIntentJudge } from "./judge";
 import type { Locale } from "./lexicon";
 import { normalize } from "./normalize";
 import {
-  chunk, decideAdvance, embeddingModelCheck, expansionTaskSchema, judgeSlots, planExpansion, ranges, type ExpansionTask, type StageCounts,
+  chunk, decideAdvance, embeddingModelCheck, expansionTaskSchema, judgeSlots, planExpansion, ranges, type ExpansionTask,
 } from "./plan";
 import { judgeResponseSchema, verdictSchema, type Candidate } from "./schemas";
 import { LIMITS, thresholdsFor } from "./stage-config";
+import { afterClassify, afterTitles, planHandlers, startPlan } from "./stages-plan";
+import {
+  applyUpdates, basePayload, db, enqueue, enqueueAdvance, failRun, liveRun, loadCandidates, parsePayload, readAll, rpc, setStage, stageCounts, uuid,
+  type Run,
+} from "./stage-kit";
 
 /**
  * S1-S4 of the topical map as chunked, resumable jobs (PLAN §3.2, §12). Every handler:
@@ -27,128 +31,16 @@ import { LIMITS, thresholdsFor } from "./stage-config";
  * have unit tests; the SQL functions are tested in supabase/tests/rls_0008.sql. See docs/PROGRESS.md.
  */
 
-const db = () => createAdminClient();
-
-const uuid = z.string().uuid();
-const basePayload = z.object({ mapRunId: uuid });
 const s2Payload = basePayload.extend({ tasks: z.array(expansionTaskSchema).min(1).max(10) });
 const rangePayload = basePayload.extend({ from: z.number().int().min(0), to: z.number().int().min(1) });
 const advancePayload = basePayload.extend({
-  after: z.enum(["s2", "embed", "pairs", "judge"]),
+  after: z.enum(["s2", "embed", "pairs", "judge", "classify", "titles"]),
   poll: z.number().int().min(0).default(0),
   round: z.number().int().min(0).default(0),
 });
 const judgePayload = basePayload.extend({ slot: z.number().int().min(0), slots: z.number().int().min(1), round: z.number().int().min(0) });
 
-const LOCALES = ["es-MX", "es-US", "es-ES", "en-US"] as const;
-const runSchema = z.object({
-  id: uuid,
-  workspace_id: uuid,
-  topic: z.string(),
-  language: z.string(),
-  locale: z.enum(LOCALES),
-  target_min: z.number().int(),
-  target_max: z.number().int(),
-  status: z.string(),
-  params: z.unknown(),
-});
-type Run = z.infer<typeof runSchema>;
 
-function parsePayload<S extends z.ZodType>(schema: S, payload: unknown): z.output<S> {
-  const p = schema.safeParse(payload);
-  if (!p.success) throw new JobError("invalid payload", "invalid_payload", { retryable: false });
-  return p.data;
-}
-
-/** The run, or null when it is no longer live (canceled/failed/finished) or not in this workspace. */
-async function liveRun(ctx: JobContext, runId: string): Promise<Run | null> {
-  const { data, error } = await db()
-    .from("map_runs")
-    .select("id, workspace_id, topic, language, locale, target_min, target_max, status, params")
-    .eq("id", runId)
-    .eq("workspace_id", ctx.workspaceId)
-    .maybeSingle();
-  if (error) throw new JobError("run lookup failed", "db_error", { retryable: true });
-  if (!data) throw new JobError("run not found", "run_not_found", { retryable: false });
-  const run = runSchema.safeParse(data);
-  if (!run.success) throw new JobError("run row invalid", "db_invalid_row", { retryable: false });
-  return run.data.status === "queued" || run.data.status === "running" ? run.data : null;
-}
-
-async function rpc(name: string, args: Record<string, unknown>): Promise<unknown> {
-  const { data, error } = await db().rpc(name, args);
-  if (error) throw new JobError(`${name} failed`, "db_error", { retryable: true });
-  return data;
-}
-
-async function enqueue(
-  ctx: JobContext,
-  type: string,
-  payload: Record<string, unknown>,
-  key: string,
-  opts: { provider?: "anthropic" | "openai" | "gemini"; delaySeconds?: number; stage?: string } = {},
-): Promise<void> {
-  await rpc("job_enqueue", {
-    p_workspace: ctx.workspaceId,
-    p_type: type,
-    p_payload: payload,
-    p_key: key,
-    p_credit_action: null,
-    p_run_at: new Date(Date.now() + (opts.delaySeconds ?? 0) * 1000).toISOString(),
-    p_max_attempts: 3,
-    p_priority: 0,
-    p_provider: opts.provider ?? null,
-    p_parent: ctx.jobId,
-    p_stage: opts.stage ?? null,
-  });
-}
-
-const advanceKey = (run: string, after: string, round: number, poll: number) => `map:${run}:adv:${after}:${round}:${poll}`;
-
-async function enqueueAdvance(ctx: JobContext, runId: string, after: "s2" | "embed" | "pairs" | "judge", round: number, poll: number, delay: number) {
-  await enqueue(ctx, "map.advance", { mapRunId: runId, after, round, poll }, advanceKey(runId, after, round, poll), { delaySeconds: delay });
-}
-
-/** Reads every row of a query, 1000 at a time (PostgREST page size), in a stable order. */
-async function readAll<T>(fetchPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>, max = 20_000): Promise<T[]> {
-  const out: T[] = [];
-  for (let from = 0; from < max; from += 1000) {
-    const { data, error } = await fetchPage(from, from + 999);
-    if (error) throw new JobError("db read failed", "db_error", { retryable: true });
-    const rows = data ?? [];
-    out.push(...rows);
-    if (rows.length < 1000) break;
-  }
-  return out;
-}
-
-const candRow = z.object({ id: uuid, raw: z.string(), norm_key: z.string().nullable().optional(), status: z.string(), seq: z.number().int().nullable().optional(), merged_into: uuid.nullable().optional() });
-type CandRow = z.infer<typeof candRow>;
-
-async function loadCandidates(runId: string, statuses?: string[]): Promise<CandRow[]> {
-  const rows = await readAll<unknown>((from, to) => {
-    let q = db().from("kw_candidates").select("id, raw, norm_key, status, seq, merged_into").eq("map_run_id", runId);
-    if (statuses) q = q.in("status", statuses);
-    return q.order("id").range(from, to);
-  });
-  return rows.map((r) => {
-    const p = candRow.safeParse(r);
-    if (!p.success) throw new JobError("candidate row invalid", "db_invalid_row", { retryable: false });
-    return p.data;
-  });
-}
-
-async function applyUpdates(runId: string, items: Record<string, unknown>[]): Promise<void> {
-  for (const part of chunk(items, 500)) await rpc("kw_apply_updates", { p_run: runId, p_items: part });
-}
-
-async function failRun(runId: string, reason: string): Promise<void> {
-  await rpc("map_run_finish", { p_run: runId, p_status: "failed", p_error: reason });
-}
-
-async function setStage(runId: string, stage: string): Promise<void> {
-  await rpc("map_run_set_stage", { p_run: runId, p_stage: stage });
-}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // S1: facet model
@@ -350,9 +242,11 @@ const s4judge: JobHandler = async (ctx) => {
   if (rows.length === 0) return { judged: 0 };
 
   let cost = 0;
+  const providers = new Set<string>();
   const judge = llmIntentJudge(async (req) => {
     const r = await callLlm({ task: "intent_judge", workspaceId: ctx.workspaceId, jobId: ctx.jobId, system: req.system, prompt: req.prompt, schema: judgeResponseSchema, maxOutputTokens: 3000, temperature: 0 });
     cost += r.costUsd;
+    providers.add(r.provider);
     return r.data;
   });
   const out = await judge.judge(rows.map((r) => ({ a: r.a_raw, b: r.b_raw })));
@@ -366,19 +260,13 @@ const s4judge: JobHandler = async (ctx) => {
       }),
     );
   }
-  return { judged: rows.length, cost_usd: cost };
+  return { judged: rows.length, cost_usd: cost, providers: [...providers] };
 };
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Coordinator: polls a stage, then enqueues the next one
 // ---------------------------------------------------------------------------------------------------------------------
-const STAGE_TYPE = { s2: "map.s2_expand", embed: "map.s3_embed", pairs: "map.s4_pairs", judge: "map.s4_judge" } as const;
-const countsRow = z.object({ queued: z.coerce.number(), running: z.coerce.number(), succeeded: z.coerce.number(), dead: z.coerce.number() });
-
-async function stageCounts(runId: string, type: string): Promise<StageCounts> {
-  const rows = z.array(countsRow).parse(await rpc("map_stage_status", { p_run: runId, p_type: type }));
-  return rows[0] ?? { queued: 0, running: 0, succeeded: 0, dead: 0 };
-}
+const STAGE_TYPE = { s2: "map.s2_expand", embed: "map.s3_embed", pairs: "map.s4_pairs", judge: "map.s4_judge", classify: "map.s5_classify", titles: "map.s7_titles" } as const;
 
 async function pendingPairCount(runId: string): Promise<number> {
   const { count, error } = await db().from("kw_pairs").select("*", { count: "exact", head: true }).eq("map_run_id", runId).is("verdict", null);
@@ -413,6 +301,16 @@ const advance: JobHandler = async (ctx) => {
   if (after === "s2") {
     await enqueue(ctx, "map.s3_normalize", { mapRunId }, `map:${mapRunId}:s3`, { stage: "s3_normalize" });
     return { next: "s3_normalize" };
+  }
+
+  if (after === "classify") {
+    await afterClassify(ctx, mapRunId);
+    return { next: "s6_silos" };
+  }
+
+  if (after === "titles") {
+    await afterTitles(ctx, mapRunId);
+    return { next: "s8_links" };
   }
 
   if (after === "embed") {
@@ -537,8 +435,10 @@ const s4finalize: JobHandler = async (ctx) => {
     target_max: run.target_max,
   };
   await rpc("map_run_drop_embeddings", { p_run: mapRunId });
-  await rpc("map_run_finish", { p_run: mapRunId, p_status: "succeeded", p_stats: stats });
-  return stats;
+  // The run is NOT finished here any more: S5-S9 follow, and S9 commits the credits (stages-plan.ts).
+  await rpc("map_run_merge_stats", { p_run: mapRunId, p_stats: stats });
+  const next = await startPlan(ctx, mapRunId);
+  return { ...stats, next: "s5_classify", ...next };
 };
 
 export const mapHandlers: Record<string, JobHandler> = {
@@ -550,6 +450,7 @@ export const mapHandlers: Record<string, JobHandler> = {
   "map.s4_judge": s4judge,
   "map.advance": advance,
   "map.s4_finalize": s4finalize,
+  ...planHandlers,
 };
 
 export { LlmError };

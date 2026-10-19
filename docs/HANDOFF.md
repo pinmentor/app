@@ -24,13 +24,14 @@ PinMentor = মাল্টি-ইউজার SaaS: টপিক → যাচ�
 | 03 | ডেডুপ-ইঞ্জিন (S3/S4) + ইভ্যাল + গোল্ড-সেট (`provisional`) + `SerpProvider` | জিপ দেওয়া হয়েছে; CI সবুজ কি না মালিক জানাননি |
 | 04 | API কী অ্যাডমিন পেজ (`/admin/integrations`), `platform_secrets` (০০০৭) | মালিক নিশ্চিত: সব হয়েছে, টেস্ট পাস (১৭ অক্টোবর) |
 | 05 | ম্যাপ-টেবিল (০০০৮), pgvector (০০০৯), `embed()`, S1→S4 জব-স্টেজ, `/admin/maps`, সুইপ + গোল্ড-লেবেলিং CLI | জিপ দেওয়া হয়েছে; ০০০৮/০০০৯ ও টেস্ট মালিকের চালানো বাকি; **স্টেজ-হ্যান্ডলার আসল DB/API-তে অচালিত** — PROGRESS.md দেখো |
+| 06 | S5–S9: `silos`/`plan_items`/`map_snapshots` (০০১০), ইনটেন্ট/টাইপ, স্কোর, সাইলো, টাইটেল/স্লাগ/লিংক, ভেরিফিকেশন V1–V10, `/admin/maps/[id]` | জিপ দেওয়া হবে; ০০১০ ও `rls_0010.sql` (৩৭) মালিকের চালানো বাকি; S1→S9 শৃঙ্খল লোকাল Postgres-এ নকল LLM/ক্লায়েন্টে চলেছে, **আসল Supabase/LLM-এ অচালিত**। থ্রেশহোল্ড রি-টিউন ও গোল্ড-লেবেলিং করা হয়নি |
 
-মালিকের বাকি করণীয় প্রতিটি ব্যাচের জন্য `docs/PROGRESS.md`-এর "মালিকের করণীয়" অংশে। **নতুন চ্যাটের প্রথম কাজ:** মালিককে জিজ্ঞেস করো Batch 05-এর আপলোড/CI সবুজ কি না, `rls_0008.sql` (৬২/৬২), `pgvector_0009.sql` (১৮/১৮, আসল pgvector-এ প্রথম রান) ফল কী, এবং `/admin/maps`-এ প্রথম ছোট রানের ফল ও এরর; লাল হলে আগে ঠিক করো।
+মালিকের বাকি করণীয় প্রতিটি ব্যাচের জন্য `docs/PROGRESS.md`-এর "মালিকের করণীয়" অংশে। **নতুন চ্যাটের প্রথম কাজ:** মালিককে জিজ্ঞেস করো Batch 06-এর আপলোড/CI সবুজ কি না, `0010` ও `rls_0010.sql` (৩৭/৩৭) ফল কী, এবং `/admin/maps`-এ ছোট রানের ফল (status, রিপোর্ট verdict ও V-সারি, লাল জব)। `rls_0008` ৬২/৬২ ও `pgvector_0009` ১৮/১৮ মালিক আগেই নিশ্চিত করেছেন। লাল হলে আগে ঠিক করো।
 
 ## ৪. রিপো-ম্যাপ (গুরুত্বপূর্ণ ফাইল)
 - `supabase/migrations/0001…0007` — স্কিমা। `supabase/tests/` — SQL টেস্ট ও কনকারেন্সি স্ক্রিপ্ট; `supabase/tests/local/supabase_shim.sql` — লোকাল Postgres-এ Supabase-এর নকল (শুধু টেস্টের জন্য)। `supabase/ops/schedule_jobs.sql` — pg_cron শিডিউল (মালিক চালিয়েছেন)।
 - `src/modules/llm/` — LLM-এর **একমাত্র দরজা** `callLlm()` (মডেল/দাম/রুট DB-তে; কিল-সুইচ, বাজেট-গার্ড; ফলব্যাক চেইন)। `src/modules/jobs/` — জব কিউ ক্লায়েন্ট; `/api/jobs/tick`।
-- `src/modules/topical-map/stages.ts` (S1→S4 জব-হ্যান্ডলার + `map.advance` কোঅর্ডিনেটর), `plan.ts` (বিশুদ্ধ প্ল্যানিং/সিদ্ধান্ত), `stage-config.ts` (LIMITS, থ্রেশহোল্ড), `panel.ts` (গোল্ড-প্যানেল)। `src/modules/llm/embed.ts` = এমবেডিংয়ের একমাত্র দরজা।
+- `src/modules/topical-map/stages.ts` (S1→S4 জব-হ্যান্ডলার + `map.advance` কোঅর্ডিনেটর), `stages-plan.ts` (S5→S9 হ্যান্ডলার), `stage-kit.ts` (সাধারণ সহায়ক), `classify.ts`/`score.ts`/`silo.ts`/`titles.ts`/`links.ts`/`verify.ts` (S5–S9-এর বিশুদ্ধ লজিক), `supabase/migrations/0010_topical_map_plan.sql`, `/admin/maps/[id]`, `plan.ts` (বিশুদ্ধ প্ল্যানিং/সিদ্ধান্ত), `stage-config.ts` (LIMITS, থ্রেশহোল্ড), `panel.ts` (গোল্ড-প্যানেল)। `src/modules/llm/embed.ts` = এমবেডিংয়ের একমাত্র দরজা।
 - `src/modules/topical-map/` — S1/S2 প্রম্পট ও স্কিমা (`facets.ts`), S3 (`normalize.ts`, `lexicon.ts`), মডিফায়ার-ভেটো (`modifiers.ts`), `compare.ts`, `dedup.ts`, `judge.ts` (LLM ইনটেন্ট-জাজ, `callJson` ইনজেক্টেড), `serp.ts`, `embed.ts` (অফলাইন লেক্সিক্যাল বেসলাইন), `eval.ts`। ইভ্যাল: `eval/golden/es-peinados.jsonl`, `eval/floors.json`, `pnpm eval:dedup`।
 - `src/lib/secrets/` — `providers.ts`, `crypto.ts` (AES-256-GCM, `ENCRYPTION_KEY`), `resolver.ts` (পিওর) / `resolve.ts` (DB-সংযুক্ত), `test-connection.ts`, `schemas.ts`।
 - `src/lib/admin/` — `guard.ts` (`requireAdmin()`: role → 2FA aal2; অ-অ্যাডমিন 404), `roles.ts` (`canAdjustCredits`, `canManageJobs`, `canEnqueueTestJobs`, `canManageSecrets`)।
@@ -47,13 +48,12 @@ PinMentor = মাল্টি-ইউজার SaaS: টপিক → যাচ�
 - **কী রিজলভার:** অ্যাডমিন-পেজের এনক্রিপ্টেড কী → না থাকলে env (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `DATAFORSEO_LOGIN/PASSWORD`)। ৬০ সেকেন্ড ক্যাশ।
 - স্প্যানিশ লোকেল ডিফল্ট `es-MX` (মালিক আমার সিদ্ধান্তে ছেড়েছেন)। স্লাগে সাল নয়, আর্টিকেলে দাম/ডিসকাউন্ট নয় (CLAUDE.md)।
 
-## ৬. পরের কাজ: Batch 06
-শুরুর শর্ত: Batch 05-এর করণীয় (PROGRESS.md) ও প্রথম ছোট রানের ফল।
-১. প্রথম আসল রানের বাগ ঠিক (বিশেষত `stages.ts`-এর DB-I/O, PostgREST `.range()` পেজিং, `.contains()` ফিল্টার, `kw_neighbors` আসল pgvector-এ)।
-২. `eval-dedup.ts --embedder live --sweep`-এর ফল দিয়ে `REAL_EMBEDDER_THRESHOLDS` (এখন প্লেসহোল্ডার 0.92/0.65) ঠিক করা।
-৩. `scripts/label-gold.ts` চালিয়ে আসল রান থেকে `confirmed` গোল্ড-জোড়া যোগ।
-৪. S5–S10: ইনটেন্ট/টাইপ, স্কোর, সাইলো, টাইটেল/স্লাগ, ভেরিফিকেশন রিপোর্ট (`silos`, `plan_items`, `map_snapshots`, `batches` টেবিল + RLS)।
-৫. ইউজার-মুখী ম্যাপ UI (ফ্যাসেট এডিট, Split/Merge/Promote) আলাদা ব্যাচে।
+## ৬. পরের কাজ: Batch 07
+শুরুর শর্ত: Batch 06-এর করণীয় (PROGRESS.md) ও আসল রানের ফল।
+১. আসল রানের বাগ ঠিক (বিশেষত PostgREST-এর `.range()`/`.contains()`/`upsert`, আসল মডেলের JSON-আকার, `kw_primary_edges`-এর গতি আসল pgvector-এ)।
+২. `eval-dedup.ts --embedder live --sweep`-এর ফল দিয়ে `REAL_EMBEDDER_THRESHOLDS` (প্লেসহোল্ডার 0.92/0.65) ও সাইলো-প্যারামিটার (`edgeMin 0.5`, `k 12`, `minSim 0.5`) ঠিক করা।
+৩. `scripts/label-gold.ts` চালিয়ে `confirmed` গোল্ড-জোড়া।
+৪. ইউজার-মুখী ম্যাপ UI (রিপোর্ট-কার্ড, Fill gaps, Split/Merge/Promote, approve) **অথবা** `batches` + লেখার-ওয়ার্কফ্লো; মালিক ক্রম ঠিক করবেন।
 
 ## ৭. খোলা ঋণ ও সতর্কতা
 - **লকফাইল ঋণ:** `pnpm-lock.yaml` পুরনো (এই স্যান্ডবক্সে npm বন্ধ ছিল)। সাময়িক: `.npmrc` (`frozen-lockfile=false`) ও CI-তে `--no-frozen-lockfile`। কোনো কম্পিউটারে `pnpm install` চালিয়ে নতুন লকফাইল কমিট, তারপর `.npmrc` মুছে `--frozen-lockfile` ফেরানো। নতুন devDependency `tsx` (Batch 03) ওই লকফাইলেই যাবে।

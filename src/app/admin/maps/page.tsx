@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { z } from "zod";
 import { AdminShell } from "@/app/admin/admin-nav";
 import { newIdempotencyKey } from "@/lib/admin/keys";
@@ -45,8 +46,8 @@ export default async function MapsPage({ searchParams }: { searchParams: Promise
         <div>
           <h1>Topical maps</h1>
           <p>
-            Runs the first four stages (facets, candidates, normalise, semantic dedup) for a topic. The result is a list of
-            primary keywords with their merged variants. Later stages (intent, scoring, silos, titles) come next.
+            Runs the whole pipeline for a topic: facets, candidates, normalise, semantic dedup, intent and type, scoring, silos,
+            titles and slugs, link plan, and the verification report. Open a finished run to see its report and plan.
           </p>
         </div>
       </div>
@@ -109,7 +110,7 @@ export default async function MapsPage({ searchParams }: { searchParams: Promise
               {(runs.success ? runs.data : []).map((r) => (
                 <tr key={r.id}>
                   <td>
-                    {r.topic} <span className="pm-muted">({r.locale}, ≤{r.target_max})</span>
+                    <Link href={`/admin/maps/${r.id}`}>{r.topic}</Link> <span className="pm-muted">({r.locale}, ≤{r.target_max})</span>
                   </td>
                   <td>
                     <span className={`pm-pill ${PILL[r.status] ?? ""}`}>{r.status}</span>
