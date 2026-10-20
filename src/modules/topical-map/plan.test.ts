@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { chunk, decideAdvance, embeddingModelCheck, expansionCallCount, judgeSlots, planExpansion, ranges } from "./plan";
-import { thresholdsFor, REAL_EMBEDDER_THRESHOLDS } from "./stage-config";
+import { LIMITS, thresholdsFor, REAL_EMBEDDER_THRESHOLDS } from "./stage-config";
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const facets = [
@@ -46,7 +46,7 @@ describe("coordinator decision", () => {
     expect(decideAdvance("s2", c(0, 2), 5)).toEqual({ action: "wait" });
     expect(decideAdvance("s2", c(0, 0), 5)).toEqual({ action: "go" });
     expect(decideAdvance("s2", c(0, 0, 1), 5).action).toBe("fail");
-    expect(decideAdvance("s2", c(1, 0), 240).action).toBe("fail");
+    expect(decideAdvance("s2", c(1, 0), LIMITS.advanceMaxPolls).action).toBe("fail");
   });
   it("a dead job wins over live ones (do not keep spending on a doomed run)", () => {
     expect(decideAdvance("embed", c(3, 1, 1), 1).action).toBe("fail");

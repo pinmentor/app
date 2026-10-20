@@ -13,7 +13,7 @@ import { scoreItem } from "./score";
 import { clusterSilos, foldEdges, pickPillar, siloNameOrFallback, siloNamePrompt, siloNameResponseSchema, type Edge } from "./silo";
 import { LIMITS, listRangeFor, thresholdsFor } from "./stage-config";
 import { shortText, tolerantList, withKeys } from "./tolerant";
-import { basePayload, db, enqueue, enqueueAdvance, failRun, liveRun, loadCandidates, parsePayload, readAll, rpc, setStage, uuid, type Run } from "./stage-kit";
+import { basePayload, db, enqueue, enqueueAdvance, failRun, liveRun, loadCandidates, parsePayload, isAutoSize, readAll, rpc, setStage, uuid, type Run } from "./stage-kit";
 import { assignListCounts, buildSlugs, cleanTitles, targetWords, titlePrompt, titleResponseSchema } from "./titles";
 import {
   buildReport, checkAudit, checkCannibalization, checkCoverage, checkDuplicates, checkExistingContent, checkIntent, checkLanguage, checkPolicy, checkRules,
@@ -527,6 +527,9 @@ const s9verify: JobHandler = async (ctx) => {
   const qaSample = stride(vitems, LIMITS.qaSample).map((v) => ({ keyword: v.keyword, title: v.title }));
   const [audit, qa] = await Promise.all([runAudit(ctx, mapRunId, producers, labelOf, pairRows), runLanguageQa(ctx, run, producers, qaSample)]);
 
+  const droppedRes = await db().from("kw_candidates").select("id", { count: "exact", head: true }).eq("map_run_id", mapRunId).eq("status", "dropped");
+  if (droppedRes.error) throw new JobError("dropped count failed", "db_error", { retryable: true });
+  const trimmed = droppedRes.count ?? 0;
   const thresholds = thresholdsFor(run.params);
   const range = listRangeFor(run.params);
   const checks = [
@@ -538,7 +541,7 @@ const s9verify: JobHandler = async (ctx) => {
     checkExistingContent(),
     checkPolicy(vitems),
     checkAudit(audit),
-    checkSizeBalance(vitems, silos, { min: run.target_min, max: run.target_max }),
+    checkSizeBalance(vitems, silos, { min: run.target_min, max: run.target_max, auto: isAutoSize(run.params), trimmed }),
     checkRules(vitems, range),
   ];
   const report = buildReport(checks);

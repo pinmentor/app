@@ -6,7 +6,7 @@ import { requireAdmin } from "@/lib/admin/guard";
 import { canEnqueueTestJobs } from "@/lib/admin/roles";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { cancelRun, startRun } from "./actions";
-import { LOCALE_OPTIONS, runListRowSchema } from "./schemas";
+import { DEFAULT_CEILING, LOCALE_OPTIONS, runListRowSchema } from "./schemas";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Topical maps — PinMentor Admin" };
@@ -63,8 +63,13 @@ export default async function MapsPage({ searchParams }: { searchParams: Promise
         <section className="pm-section">
           <h2>Start a run</h2>
           <p>
-            Credits are held from <em>your own</em> workspace when you start, spent when the run succeeds and given back if it
-            fails or is canceled. Cost: 10 + 5 &times; (target max / 25, rounded up). For example 100 items = {cost(100)}, 500 items = {cost(500)}.
+            <strong>Auto</strong> (recommended): the topic decides how many articles a full map needs. You only set a <em>ceiling</em>;
+            it is a safety limit, not a target. <strong>Custom</strong>: you give both a minimum and a maximum.
+          </p>
+          <p>
+            Credits are held from <em>your own</em> workspace when you start and given back if the run fails or is canceled.
+            Price: 10 + 5 &times; (articles / 25, rounded up). An <strong>auto</strong> run holds the price of its ceiling (a ceiling of {DEFAULT_CEILING} holds {cost(DEFAULT_CEILING)} credits) but
+            is charged only for the articles it really produced. For a cheap test use a small ceiling (for example 30 holds {cost(30)} credits).
           </p>
           <form action={startRun} className="pm-inline" style={{ gap: "0.5rem", flexWrap: "wrap" }}>
             <input type="hidden" name="key" value={newIdempotencyKey()} />
@@ -76,8 +81,12 @@ export default async function MapsPage({ searchParams }: { searchParams: Promise
                 </option>
               ))}
             </select>
-            <input name="targetMin" type="number" min={10} max={1000} defaultValue={20} aria-label="Target min" className="pm-input pm-input-sm" style={{ width: "5.5rem" }} />
-            <input name="targetMax" type="number" min={10} max={1000} defaultValue={50} aria-label="Target max" className="pm-input pm-input-sm" style={{ width: "5.5rem" }} />
+            <select name="size" defaultValue="auto" aria-label="Size" className="pm-input" style={{ width: "auto" }}>
+              <option value="auto">Auto size</option>
+              <option value="custom">Custom size</option>
+            </select>
+            <input name="targetMin" type="number" min={10} max={1000} placeholder="Min (custom only)" aria-label="Target min (custom only)" className="pm-input pm-input-sm" style={{ width: "9.5rem" }} />
+            <input name="targetMax" type="number" min={10} max={1000} defaultValue={DEFAULT_CEILING} aria-label="Ceiling (auto) or target max (custom)" title="Ceiling (auto) or target max (custom)" className="pm-input pm-input-sm" style={{ width: "5.5rem" }} />
             <select name="mode" defaultValue="fast" aria-label="Mode" className="pm-input" style={{ width: "auto" }}>
               <option value="fast">Fast</option>
               <option value="economy">Economy</option>

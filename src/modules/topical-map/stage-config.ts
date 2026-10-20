@@ -26,8 +26,8 @@ export const LIMITS = {
   judgePerJob: 30,
   judgeRounds: 3,
   /** coordinator poll */
-  advancePollSeconds: 30,
-  advanceMaxPolls: 240,
+  advancePollSeconds: 10,
+  advanceMaxPolls: 720,
   /** expansion */
   candidatesPerCall: 30,
   overshoot: 6,

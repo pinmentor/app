@@ -24,6 +24,11 @@ export const runSchema = z.object({
 });
 export type Run = z.infer<typeof runSchema>;
 
+/** `auto` = the topic decides its own size and target_max is only a ceiling; anything else = custom (min and max are targets). */
+export function isAutoSize(params: unknown): boolean {
+  return typeof params === "object" && params !== null && (params as Record<string, unknown>).size === "auto";
+}
+
 export function parsePayload<S extends z.ZodType>(schema: S, payload: unknown): z.output<S> {
   const p = schema.safeParse(payload);
   if (!p.success) throw new JobError("invalid payload", "invalid_payload", { retryable: false });

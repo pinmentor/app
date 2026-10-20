@@ -19,7 +19,7 @@ const checkSchema = z.object({
 const reportSchema = z.object({ verdict: z.enum(["pass", "flag", "fail"]), checks: z.array(checkSchema), note: z.string().optional() });
 const runSchema = z.object({
   id: z.string().uuid(), topic: z.string(), locale: z.string(), status: z.string(), stage: z.string(), last_error: z.string().nullable(),
-  target_min: z.number(), target_max: z.number(), stats: z.record(z.string(), z.unknown()), report: z.unknown(),
+  target_min: z.number(), target_max: z.number(), params: z.record(z.string(), z.unknown()), stats: z.record(z.string(), z.unknown()), report: z.unknown(),
 });
 const siloSchema = z.object({ id: z.string().uuid(), name: z.string(), size: z.number(), gloss: z.record(z.string(), z.unknown()), position: z.number() });
 const itemSchema = z.object({
@@ -30,19 +30,29 @@ const itemSchema = z.object({
 
 const STATUS_CLASS: Record<string, string> = { pass: "pm-pill-succeeded", flag: "pm-pill-running", fail: "pm-pill-dead", skipped: "pm-pill-canceled" };
 
+/** Translation shown next to the Spanish text: off (default: the map's own language only), Bengali, English or both. */
+const GLOSS_MODES = ["off", "bn", "en", "both"] as const;
+type GlossMode = (typeof GLOSS_MODES)[number];
+const GLOSS_LABEL: Record<GlossMode, string> = { off: "Off", bn: "বাংলা", en: "English", both: "Both" };
+
 /** gloss = {keyword:{en,bn}, title:{en,bn}} written by S7; anything else renders as nothing. */
-function glossLine(g: Record<string, unknown>, part: "keyword" | "title"): string {
+function glossLine(g: Record<string, unknown>, part: "keyword" | "title", mode: GlossMode): string {
+  if (mode === "off") return "";
   const p = z.object({ en: z.string().optional(), bn: z.string().optional() }).safeParse(g[part]);
-  return p.success ? [p.data.en, p.data.bn].filter(Boolean).join(" · ") : "";
+  if (!p.success) return "";
+  const picked = mode === "bn" ? [p.data.bn] : mode === "en" ? [p.data.en] : [p.data.en, p.data.bn];
+  return picked.filter(Boolean).join(" · ");
 }
 
-export default async function MapResultPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function MapResultPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ gloss?: string }> }) {
   const { role } = await requireAdmin();
   const id = idSchema.safeParse((await params).id);
+  const g = z.enum(GLOSS_MODES).safeParse((await searchParams).gloss);
+  const mode: GlossMode = g.success ? g.data : "off";
   if (!id.success) notFound();
 
   const sb = createAdminClient();
-  const runRes = await sb.from("map_runs").select("id, topic, locale, status, stage, last_error, target_min, target_max, stats, report").eq("id", id.data).maybeSingle();
+  const runRes = await sb.from("map_runs").select("id, topic, locale, status, stage, last_error, target_min, target_max, params, stats, report").eq("id", id.data).maybeSingle();
   const run = runSchema.safeParse(runRes.data);
   if (!run.success) notFound();
   const [silosRes, itemsRes] = await Promise.all([
@@ -59,7 +69,7 @@ export default async function MapResultPage({ params }: { params: Promise<{ id: 
         <div>
           <h1>{run.data.topic}</h1>
           <p>
-            <Link href="/admin/maps">&larr; All runs</Link> · {run.data.locale} · target {run.data.target_min}-{run.data.target_max} · {run.data.status} / {run.data.stage}
+            <Link href="/admin/maps">&larr; All runs</Link> · {run.data.locale} · {run.data.params.size === "auto" ? `auto size, ceiling ${run.data.target_max}` : `target ${run.data.target_min}-${run.data.target_max}`} · {run.data.status} / {run.data.stage}
             {run.data.last_error ? ` · ${run.data.last_error}` : ""}
           </p>
         </div>
@@ -102,6 +112,15 @@ export default async function MapResultPage({ params }: { params: Promise<{ id: 
 
       <section className="pm-section">
         <h2>Silos and items</h2>
+        <p className="pm-muted">
+          Translation next to each keyword and title:{" "}
+          {GLOSS_MODES.map((m) => (
+            <span key={m}>
+              {m === mode ? <strong>{GLOSS_LABEL[m]}</strong> : <Link href={`/admin/maps/${run.data.id}?gloss=${m}`}>{GLOSS_LABEL[m]}</Link>}
+              {m === "both" ? "" : " · "}
+            </span>
+          ))}
+        </p>
         {!silos.success || !items.success ? <p className="pm-note pm-note-bad">Could not load the plan.</p> : null}
         {silos.success && items.success && silos.data.length === 0 ? <p className="pm-muted">No plan yet.</p> : null}
         {silos.success && items.success
@@ -110,7 +129,7 @@ export default async function MapResultPage({ params }: { params: Promise<{ id: 
               return (
                 <div key={s.id} style={{ marginBottom: "1.5rem" }}>
                   <h3>
-                    {s.name} <span className="pm-muted">({s.size} items{glossLine({ keyword: s.gloss }, "keyword") ? ` · ${glossLine({ keyword: s.gloss }, "keyword")}` : ""})</span>
+                    {s.name} <span className="pm-muted">({s.size} items{glossLine({ keyword: s.gloss }, "keyword", mode) ? ` · ${glossLine({ keyword: s.gloss }, "keyword", mode)}` : ""})</span>
                   </h3>
                   <div className="pm-tablewrap">
                     <table className="pm-table">
@@ -125,11 +144,11 @@ export default async function MapResultPage({ params }: { params: Promise<{ id: 
                               <td>
                                 {pillar ? <strong>{i.keyword}</strong> : i.keyword}
                                 {i.variants.length > 0 ? <div className="pm-muted">+ {i.variants.join(", ")}</div> : null}
-                                {glossLine(i.gloss, "keyword") ? <div className="pm-muted">{glossLine(i.gloss, "keyword")}</div> : null}
+                                {glossLine(i.gloss, "keyword", mode) ? <div className="pm-muted">{glossLine(i.gloss, "keyword", mode)}</div> : null}
                               </td>
                               <td>
                                 {i.title ?? ""}
-                                {glossLine(i.gloss, "title") ? <div className="pm-muted">{glossLine(i.gloss, "title")}</div> : null}
+                                {glossLine(i.gloss, "title", mode) ? <div className="pm-muted">{glossLine(i.gloss, "title", mode)}</div> : null}
                               </td>
                               <td className="pm-nowrap">{i.slug ?? ""}</td>
                               <td>{i.article_type}</td>

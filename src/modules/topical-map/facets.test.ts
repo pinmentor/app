@@ -29,6 +29,8 @@ describe("facet schema and prompts", () => {
   });
   it("prompts carry topic, locale and facet value", () => {
     expect(facetPrompt("Peinados", "es-MX").system).toContain("Mexican Spanish");
+    expect(facetPrompt("Peinados", "es-MX").prompt).toContain("8-14 facets");
+    expect(facetPrompt("Peinados", "es-MX", true).prompt).toContain("how BROAD the topic is");
     expect(expansionPrompt("Peinados", "es-MX", "occasion", "boda").prompt).toContain("occasion = boda");
   });
 });

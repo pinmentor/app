@@ -69,6 +69,12 @@ describe("V8/V9/V10", () => {
     expect(checkSizeBalance(items, silos, { min: 20, max: 50 }).status).toBe("pass");
     expect(checkSizeBalance(items, silos, { min: 40, max: 50 }).status).toBe("flag");
     expect(checkSizeBalance(items, silos, { min: 5, max: 20 }).status).toBe("fail");
+    // auto size: no minimum, and only a reached ceiling raises a flag
+    expect(checkSizeBalance(items, silos, { min: 10, max: 200, auto: true }).status).toBe("pass");
+    expect(checkSizeBalance(items, silos, { min: 10, max: 200, auto: true }).summary).toContain("auto size");
+    const hit = checkSizeBalance(items, silos, { min: 10, max: 200, auto: true, trimmed: 12 });
+    expect(hit.status).toBe("flag");
+    expect(hit.summary).toContain("ceiling reached: 12");
   });
   it("rules: year in slug, duplicate slug, list number out of range fail; fallback title flags", () => {
     const range = { min: 7, max: 35 };

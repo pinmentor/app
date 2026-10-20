@@ -16,7 +16,7 @@ import { judgeResponseSchema, verdictSchema, type Candidate } from "./schemas";
 import { LIMITS, thresholdsFor } from "./stage-config";
 import { afterClassify, afterTitles, planHandlers, startPlan } from "./stages-plan";
 import {
-  applyUpdates, basePayload, db, enqueue, enqueueAdvance, failRun, liveRun, loadCandidates, parsePayload, readAll, rpc, setStage, stageCounts, uuid,
+  applyUpdates, basePayload, db, enqueue, enqueueAdvance, failRun, isAutoSize, liveRun, loadCandidates, parsePayload, readAll, rpc, setStage, stageCounts, uuid,
   type Run,
 } from "./stage-kit";
 
@@ -51,7 +51,7 @@ const s1: JobHandler = async (ctx) => {
   if (!run) return { skipped: "run_not_live" };
   await setStage(mapRunId, "s1_facets");
 
-  const { system, prompt } = facetPrompt(run.topic, run.locale);
+  const { system, prompt } = facetPrompt(run.topic, run.locale, isAutoSize(run.params));
   const r = await callLlm({ task: "facet_generation", workspaceId: ctx.workspaceId, jobId: ctx.jobId, system, prompt, schema: facetModelSchema, maxOutputTokens: 4000, temperature: 0.3 });
 
   // idempotent on retry: S2 has not started yet, so the facet rows can simply be rebuilt

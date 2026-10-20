@@ -2,16 +2,16 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { describeFailure, handlers, JobError } from "./handlers";
+import { handlerTimeoutMs, nextRound } from "./tick-plan";
 
 /**
- * One tick of the worker: watchdog -> claim -> run -> complete/fail. Called every minute by /api/jobs/tick
+ * One tick of the worker: watchdog, then rounds of claim -> run -> complete/fail until the call runs low on time (tick-plan.ts). Called every minute by /api/jobs/tick
  * (pg_cron -> pg_net). All state lives in Postgres (job_* functions), so a tick can die anywhere safely:
  * the lease expires and the watchdog re-queues the job.
  */
 
 const MAX_JOBS_PER_TICK = 8;
 const LEASE_SECONDS = 90;
-const HANDLER_TIMEOUT_MS = 50_000; // keeps one step under the 60s function limit
 // Per-provider running-job caps (job_claim). Tune here or move to feature_flags later.
 const PROVIDER_LIMITS = { anthropic: 8, openai: 8, gemini: 8 };
 
@@ -32,6 +32,7 @@ const watchdogSchema = z.array(
 export type TickSummary = {
   watchdog: { requeued: number; dead: number; released_holds: number };
   claimed: number;
+  rounds: number;
   succeeded: number;
   retried: number;
   dead: number;
@@ -48,18 +49,9 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 
 type Outcome = "succeeded" | "retried" | "dead" | "lost_lease";
 
-export async function runTick(): Promise<TickSummary> {
-  const sb = createAdminClient();
-  const worker = `tick-${randomUUID().slice(0, 8)}`;
+type RoundResult = { claimed: number; outcomes: Outcome[] };
 
-  const wdRes = await sb.rpc("job_watchdog");
-  const wd = watchdogSchema.safeParse(wdRes.data);
-  if (wdRes.error) console.error("job_watchdog failed:", wdRes.error.code ?? "no_code");
-
-  // fails map runs whose stage job died or that stalled, and releases their credit hold
-  const mapWd = await sb.rpc("map_run_watchdog");
-  if (mapWd.error) console.error("map_run_watchdog failed:", mapWd.error.code ?? "no_code");
-
+async function runRound(sb: ReturnType<typeof createAdminClient>, worker: string, timeoutMs: number): Promise<RoundResult> {
   const claimRes = await sb.rpc("job_claim", {
     p_worker: worker,
     p_limit: MAX_JOBS_PER_TICK,
@@ -80,7 +72,7 @@ export async function runTick(): Promise<TickSummary> {
 
         const result = await withTimeout(
           handler({ jobId: job.id, workspaceId: job.workspace_id, type: job.type, payload: job.payload, attempt: job.attempts }),
-          HANDLER_TIMEOUT_MS,
+          timeoutMs,
         );
 
         const done = await sb.rpc("job_complete", { p_job: job.id, p_worker: worker, p_result: result });
@@ -108,11 +100,51 @@ export async function runTick(): Promise<TickSummary> {
       }
     }),
   );
+  return { claimed: claimed.data.length, outcomes };
+}
+
+/** A queued job that becomes due before the round cutoff: worth waiting a few seconds for instead of ending the call. */
+async function jobDueSoon(sb: ReturnType<typeof createAdminClient>): Promise<boolean> {
+  const until = new Date(Date.now() + 25_000).toISOString();
+  const { count, error } = await sb.from("jobs").select("id", { count: "exact", head: true }).eq("state", "queued").lte("run_at", until);
+  return !error && (count ?? 0) > 0;
+}
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+export async function runTick(): Promise<TickSummary> {
+  const sb = createAdminClient();
+  const worker = `tick-${randomUUID().slice(0, 8)}`;
+  const started = Date.now();
+
+  const wdRes = await sb.rpc("job_watchdog");
+  const wd = watchdogSchema.safeParse(wdRes.data);
+  if (wdRes.error) console.error("job_watchdog failed:", wdRes.error.code ?? "no_code");
+
+  // fails map runs whose stage job died or that stalled, and releases their credit hold
+  const mapWd = await sb.rpc("map_run_watchdog");
+  if (mapWd.error) console.error("map_run_watchdog failed:", mapWd.error.code ?? "no_code");
+
+  const outcomes: Outcome[] = [];
+  let claimed = 0;
+  let rounds = 0;
+  for (;;) {
+    const elapsed = Date.now() - started;
+    const r = await runRound(sb, worker, handlerTimeoutMs(elapsed));
+    rounds++;
+    claimed += r.claimed;
+    outcomes.push(...r.outcomes);
+    const after = Date.now() - started;
+    const decision = nextRound({ elapsedMs: after, claimedLast: r.claimed, dueSoon: r.claimed === 0 ? await jobDueSoon(sb) : false });
+    if (decision.action === "stop") break;
+    if (decision.waitMs > 0) await sleep(decision.waitMs);
+  }
 
   const count = (o: Outcome) => outcomes.filter((x) => x === o).length;
   return {
     watchdog: wd.success && wd.data[0] ? wd.data[0] : { requeued: 0, dead: 0, released_holds: 0 },
-    claimed: claimed.data.length,
+    claimed,
+    rounds,
     succeeded: count("succeeded"),
     retried: count("retried"),
     dead: count("dead"),

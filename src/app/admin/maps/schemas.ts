@@ -2,17 +2,26 @@ import { z } from "zod";
 
 export const LOCALE_OPTIONS = ["es-MX", "es-US", "es-ES", "en-US"] as const;
 
-/** Form of the "start a map run" action. Credits are held from the admin's own workspace: cost = 10 + 5 x ceil(n/25). */
+export const SIZE_OPTIONS = ["auto", "custom"] as const;
+export const DEFAULT_CEILING = 200;
+
+/**
+ * Form of the "start a map run" action. Size `auto`: the topic decides its own size and `targetMax` is only a CEILING
+ * (the credit hold is for the ceiling, the charge is for the real size). Size `custom`: min and max are both targets.
+ * Credits: 10 + 5 x ceil(n/25).
+ */
 export const startRunSchema = z
   .object({
     topic: z.string().trim().min(2).max(200),
     locale: z.enum(LOCALE_OPTIONS),
-    targetMin: z.coerce.number().int().min(10).max(1000),
+    size: z.enum(SIZE_OPTIONS).default("auto"),
+    targetMin: z.preprocess((v) => (v === "" || v === null || v === undefined ? undefined : v), z.coerce.number().int().min(10).max(1000).optional()),
     targetMax: z.coerce.number().int().min(10).max(1000),
     mode: z.enum(["fast", "economy"]),
     key: z.string().min(8).max(100),
   })
-  .refine((v) => v.targetMin <= v.targetMax, { message: "min > max" });
+  .refine((v) => v.size === "auto" || (v.targetMin !== undefined && v.targetMin <= v.targetMax), { message: "custom size needs min <= max" })
+  .transform((v) => ({ ...v, targetMin: v.size === "auto" ? 10 : (v.targetMin as number) }));
 
 export function languageOf(locale: string): string {
   return locale.slice(0, 2);

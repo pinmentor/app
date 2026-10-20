@@ -24,10 +24,13 @@ export type FacetModel = z.output<typeof facetModelSchema>;
 
 const LANG_NAME: Record<Locale, string> = { "es-MX": "Mexican Spanish", "es-US": "US Spanish", "es-ES": "Castilian Spanish", "en-US": "US English" };
 
-export function facetPrompt(topic: string, locale: Locale): { system: string; prompt: string } {
+export function facetPrompt(topic: string, locale: Locale, auto = false): { system: string; prompt: string } {
+  const size = auto
+    ? `First judge how BROAD the topic is. A narrow topic (one product, one technique) needs 6-9 facets with 4-10 values each. A broad topic (a whole field with many audiences, occasions, tools and problems) needs 10-16 facets with 10-25 values each. Give exactly as much as the topic really has: do not pad a narrow topic and do not cut a broad one.`
+    : `List 8-14 facets with 4-20 values each.`;
   return {
     system: `You build the facet taxonomy of a content topic for a ${LANG_NAME[locale]} blog. A facet is one dimension readers search along (audience, occasion, technique, tool, face shape, problem...). Values are in ${LANG_NAME[locale]}, lowercase, the way people actually type them. "kind" must be exactly one of: ${FACET_KINDS.join(", ")} (use "other" when none fits). Return only JSON: {"facets":[{"name":"","kind":"","values":[""]}]}`,
-    prompt: `Topic: ${topic}\nLocale: ${locale}\nList 8-14 facets with 4-20 values each. Include at least one facet of kind "tool" if buying or comparing products is natural for this topic.`,
+    prompt: `Topic: ${topic}\nLocale: ${locale}\n${size} Include at least one facet of kind "tool" if buying or comparing products is natural for this topic.`,
   };
 }
 

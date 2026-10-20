@@ -151,15 +151,23 @@ export function checkAudit(a: Audit): Check {
   return check("V8", "Independent audit", status, summary, details.length > 0 ? details : undefined);
 }
 
-/** V9: size inside the target range, silo sizes inside 15-40, the A/B mix reported. */
-export function checkSizeBalance(items: VItem[], silos: VSilo[], target: { min: number; max: number }, siloRange = { min: 15, max: 40 }): Check {
+export type SizeTarget = { min: number; max: number; auto?: boolean; trimmed?: number };
+
+/**
+ * V9: size, silo sizes inside 15-40, the A/B mix reported. Custom runs: inside the target range. Auto runs: the topic
+ * chose its size, so there is no minimum; only the CEILING can be a problem (items left out because of it = flag).
+ */
+export function checkSizeBalance(items: VItem[], silos: VSilo[], target: SizeTarget, siloRange = { min: 15, max: 40 }): Check {
   const n = items.length;
   const outside = silos.filter((s) => s.size < siloRange.min || s.size > siloRange.max);
   const b = items.filter((i) => i.articleType === "B").length;
-  const parts = [`${n} items (target ${target.min}-${target.max})`, `${silos.length} silos, ${outside.length} outside ${siloRange.min}-${siloRange.max}`, `Type B ${b}, Type A ${n - b}`];
+  const trimmed = target.trimmed ?? 0;
+  const head = target.auto ? `${n} items (auto size, ceiling ${target.max})` : `${n} items (target ${target.min}-${target.max})`;
+  const parts = [head, `${silos.length} silos, ${outside.length} outside ${siloRange.min}-${siloRange.max}`, `Type B ${b}, Type A ${n - b}`];
+  if (target.auto && trimmed > 0) parts.push(`ceiling reached: ${trimmed} lower-priority items left out (raise the ceiling to include them)`);
   const details = outside.map((s) => ({ silo: s.name, size: s.size }));
   if (n > target.max) return check("V9", "Size & balance", "fail", parts.join("; "), details);
-  const small = n < target.min || outside.length > silos.length * 0.25;
+  const small = (!target.auto && n < target.min) || outside.length > silos.length * 0.25 || (target.auto && trimmed > 0);
   return check("V9", "Size & balance", small ? "flag" : "pass", parts.join("; "), details.length > 0 ? details : undefined);
 }
 

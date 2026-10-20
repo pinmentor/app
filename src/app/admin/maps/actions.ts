@@ -28,12 +28,13 @@ export async function startRun(formData: FormData) {
   const workspaceId: unknown = ws?.id;
   if (typeof workspaceId !== "string") redirect(`${BASE}?flash=error`);
 
-  const { error } = await sb.rpc("admin_map_run_create", {
+  const { error } = await sb.rpc("admin_map_run_create_sized", {
     p_admin: user.id,
     p_workspace: workspaceId,
     p_topic: v.topic,
     p_language: languageOf(v.locale),
     p_locale: v.locale,
+    p_size: v.size,
     p_target_min: v.targetMin,
     p_target_max: v.targetMax,
     p_mode: v.mode,
@@ -42,7 +43,7 @@ export async function startRun(formData: FormData) {
   });
   revalidatePath(BASE);
   if (error) {
-    console.error("admin_map_run_create failed", error.code ?? "no_code");
+    console.error("admin_map_run_create_sized failed", error.code ?? "no_code");
     redirect(`${BASE}?flash=${error.code === "PM001" ? "no_credits" : error.code === "42501" ? "forbidden" : error.code === "22023" ? "invalid" : "error"}`);
   }
   redirect(`${BASE}?flash=started`);
