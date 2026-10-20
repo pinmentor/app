@@ -59,3 +59,34 @@ export function parseReviewForm(fd: FormData): z.infer<typeof reviewFormSchema> 
 export function statusForIntent(intent: "approve" | "reject" | "draft"): (typeof ITEM_STATUSES)[number] {
   return intent === "approve" ? "approved" : intent === "reject" ? "rejected" : "draft";
 }
+
+/**
+ * The edit form (Batch 10): merge two items, move items to another silo, split a variant out of an item.
+ * - merge: exactly two ids; the FIRST in table order is kept, the second is merged into it.
+ * - move: at least one id and a target silo.
+ * - split: `variant` is "<item uuid>|<variant text>" (one select per silo); no ids needed.
+ */
+export const EDIT_INTENTS = ["merge", "move", "split"] as const;
+const editBase = z.object({ run: z.string().uuid(), gloss: z.enum(GLOSS_MODES).catch("off") });
+export const editFormSchema = z.discriminatedUnion("intent", [
+  editBase.extend({ intent: z.literal("merge"), ids: z.array(z.string().uuid()).length(2) }),
+  editBase.extend({ intent: z.literal("move"), ids: z.array(z.string().uuid()).min(1).max(1000), silo: z.string().uuid() }),
+  editBase.extend({ intent: z.literal("split"), item: z.string().uuid(), variant: z.string().trim().min(1).max(300) }),
+]);
+export type EditForm = z.infer<typeof editFormSchema>;
+
+export function parseEditForm(fd: FormData): EditForm | null {
+  const intent = String(fd.get("intent") ?? "");
+  const ids = [...new Set(fd.getAll("id").map(String))];
+  const base = { run: fd.get("run"), gloss: fd.get("gloss"), intent };
+  let raw: unknown = null;
+  if (intent === "merge") raw = { ...base, ids };
+  else if (intent === "move") raw = { ...base, ids, silo: fd.get("silo") };
+  else if (intent === "split") {
+    const v = String(fd.get("variant") ?? "");
+    const cut = v.indexOf("|");
+    raw = { ...base, item: cut > 0 ? v.slice(0, cut) : "", variant: cut > 0 ? v.slice(cut + 1) : "" };
+  }
+  const p = editFormSchema.safeParse(raw);
+  return p.success ? p.data : null;
+}

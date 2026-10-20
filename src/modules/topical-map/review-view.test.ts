@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { glossLine, parseGlossMode, parseReviewForm, statusCounts, statusForIntent } from "./review-view";
+import { glossLine, parseEditForm, parseGlossMode, parseReviewForm, statusCounts, statusForIntent } from "./review-view";
 
 const RUN = "11111111-1111-4111-8111-111111111111";
 const I1 = "22222222-2222-4222-8222-222222222222";
@@ -40,5 +40,29 @@ describe("review form", () => {
   });
   it("counts statuses", () => {
     expect(statusCounts(["draft", "approved", "approved", "rejected", "weird"])).toEqual({ draft: 1, approved: 2, rejected: 1 });
+  });
+});
+
+describe("edit form", () => {
+  const I2 = "33333333-3333-4333-8333-333333333333";
+  const S1 = "44444444-4444-4444-8444-444444444444";
+  it("merge needs exactly two different items and keeps the first", () => {
+    expect(parseEditForm(form({ run: RUN, intent: "merge", id: [I1, I2] }))).toMatchObject({ intent: "merge", ids: [I1, I2] });
+    expect(parseEditForm(form({ run: RUN, intent: "merge", id: [I1] }))).toBeNull();
+    expect(parseEditForm(form({ run: RUN, intent: "merge", id: [I1, I1] }))).toBeNull();
+    expect(parseEditForm(form({ run: RUN, intent: "merge", id: [I1, I2, S1] }))).toBeNull();
+  });
+  it("move needs items and a silo id", () => {
+    expect(parseEditForm(form({ run: RUN, intent: "move", id: [I1, I2], silo: S1 }))).toMatchObject({ intent: "move", silo: S1 });
+    expect(parseEditForm(form({ run: RUN, intent: "move", id: [I1] }))).toBeNull();
+    expect(parseEditForm(form({ run: RUN, intent: "move", silo: S1 }))).toBeNull();
+    expect(parseEditForm(form({ run: RUN, intent: "move", id: [I1], silo: "x" }))).toBeNull();
+  });
+  it("split reads '<item>|<variant>' and keeps a | inside the variant", () => {
+    expect(parseEditForm(form({ run: RUN, intent: "split", variant: `${I1}|peinados  fáciles` }))).toMatchObject({ item: I1, variant: "peinados  fáciles" });
+    expect(parseEditForm(form({ run: RUN, intent: "split", variant: `${I1}|a|b` }))).toMatchObject({ variant: "a|b" });
+    expect(parseEditForm(form({ run: RUN, intent: "split", variant: "no-separator" }))).toBeNull();
+    expect(parseEditForm(form({ run: RUN, intent: "split", variant: `${I1}|  ` }))).toBeNull();
+    expect(parseEditForm(form({ run: RUN, intent: "approve", id: [I1] }))).toBeNull();
   });
 });

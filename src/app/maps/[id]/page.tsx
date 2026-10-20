@@ -4,7 +4,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { GLOSS_LABEL, GLOSS_MODES, glossLine, parseGlossMode, reportSchema, statusCounts, type GlossMode } from "@/modules/topical-map/review-view";
 import { AppFrame } from "../chrome";
-import { reviewItems } from "./actions";
+import { editItems, reviewItems } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Review a map — PinMentor" };
@@ -24,6 +24,9 @@ const PILL: Record<string, string> = { pass: "pm-pill-succeeded", flag: "pm-pill
 const FLASH: Record<string, { text: string; bad: boolean }> = {
   blocked: { text: "Approval is blocked: the verification report is red (or missing). Rejecting and going back to draft still work.", bad: true },
   forbidden: { text: "You cannot change this map.", bad: true },
+  locked: { text: "Not changed: approved items, group main articles (pillars) and unfinished maps cannot be restructured. Send approved items back to review first.", bad: true },
+  gone: { text: "Not changed: an item, variant or group was not found (the page may be out of date). Refresh and try again.", bad: true },
+  pick: { text: "Not changed: pick exactly two items for Merge, or at least one item and a target group for Move.", bad: true },
   error: { text: "Something went wrong. Nothing was changed; please try again.", bad: true },
 };
 
@@ -52,7 +55,7 @@ export default async function ReviewMapPage({ params, searchParams }: { params: 
   const sizing = sizingSchema.safeParse(run.data.stats.sizing);
   const counts = items.success ? statusCounts(items.data.map((i) => i.status)) : { draft: 0, approved: 0, rejected: 0 };
   const blocked = run.data.status !== "succeeded" || !report.success || report.data.verdict === "fail";
-  const flash = sp.flash ? FLASH[sp.flash] ?? (sp.flash.startsWith("done-") ? { text: `Done: ${sp.flash.slice(5)} item(s) changed.`, bad: false } : undefined) : undefined;
+  const flash = sp.flash ? FLASH[sp.flash] ?? (sp.flash.startsWith("edited-") ? { text: sp.flash === "edited-merge" ? "Merged. The second item is now a variant of the first." : sp.flash === "edited-split" ? "Split. The variant is a new item without a title yet (flag: needs_title)." : "Moved. Links of the affected groups were rebuilt.", bad: false } : sp.flash.startsWith("done-") ? { text: `Done: ${sp.flash.slice(5)} item(s) changed.`, bad: false } : undefined) : undefined;
   const link = (m: GlossMode) => `/maps/${run.data.id}?gloss=${m}`;
 
   return (
@@ -126,6 +129,8 @@ export default async function ReviewMapPage({ params, searchParams }: { params: 
           ? silos.data.map((s) => {
               const mine = items.data.filter((i) => i.silo_id === s.id);
               const sg = glossLine({ keyword: s.gloss }, "keyword", mode);
+              const others = silos.data.filter((o) => o.id !== s.id);
+              const variantOptions = mine.filter((i) => i.status !== "approved").flatMap((i) => i.variants.map((v) => ({ value: `${i.id}|${v}`, label: `${v} (from ${i.keyword})` })));
               return (
                 <form key={s.id} action={reviewItems} style={{ marginTop: "1.5rem" }}>
                   <input type="hidden" name="run" value={run.data.id} />
@@ -170,6 +175,42 @@ export default async function ReviewMapPage({ params, searchParams }: { params: 
                     <button type="submit" name="intent" value="reject" className="pm-btn pm-btn-ghost pm-btn-sm">Reject selected</button>
                     <button type="submit" name="intent" value="draft" className="pm-btn pm-btn-quiet pm-btn-sm">Back to review</button>
                   </div>
+                  <details style={{ marginTop: "0.5rem" }}>
+                    <summary className="pm-muted">Edit structure: merge, move, split</summary>
+                    <div className="pm-inline" style={{ gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
+                      <button type="submit" formAction={editItems} name="intent" value="merge" className="pm-btn pm-btn-ghost pm-btn-sm" disabled={run.data.status !== "succeeded"}>
+                        Merge the 2 selected
+                      </button>
+                      <span className="pm-muted">(the upper one stays, the lower becomes its variant)</span>
+                    </div>
+                    {others.length > 0 ? (
+                      <div className="pm-inline" style={{ gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
+                        <label>
+                          Move selected to{" "}
+                          <select name="silo" defaultValue={others[0]!.id}>
+                            {others.map((o) => (
+                              <option key={o.id} value={o.id}>{o.name}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <button type="submit" formAction={editItems} name="intent" value="move" className="pm-btn pm-btn-ghost pm-btn-sm">Move</button>
+                      </div>
+                    ) : null}
+                    {variantOptions.length > 0 ? (
+                      <div className="pm-inline" style={{ gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
+                        <label>
+                          Make a variant its own article{" "}
+                          <select name="variant" defaultValue={variantOptions[0]!.value}>
+                            {variantOptions.map((o) => (
+                              <option key={o.value} value={o.value}>{o.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <button type="submit" formAction={editItems} name="intent" value="split" className="pm-btn pm-btn-ghost pm-btn-sm">Split</button>
+                      </div>
+                    ) : null}
+                    <p className="pm-muted">Not allowed for approved items or for the main article of a group. The new article from a split has no title yet.</p>
+                  </details>
                 </form>
               );
             })
