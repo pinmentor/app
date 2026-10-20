@@ -4,20 +4,13 @@ import { z } from "zod";
 import { AdminShell } from "@/app/admin/admin-nav";
 import { requireAdmin } from "@/lib/admin/guard";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { GLOSS_LABEL, GLOSS_MODES, glossLine, parseGlossMode, reportSchema, type GlossMode } from "@/modules/topical-map/review-view";
 import { formatSeconds, stageDurations, totalSeconds } from "@/modules/topical-map/timeline";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Map result — PinMentor Admin" };
 
 const idSchema = z.string().uuid();
-const checkSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  status: z.enum(["pass", "flag", "fail", "skipped"]),
-  summary: z.string(),
-  details: z.array(z.unknown()).optional(),
-});
-const reportSchema = z.object({ verdict: z.enum(["pass", "flag", "fail"]), checks: z.array(checkSchema), note: z.string().optional() });
 const runSchema = z.object({
   id: z.string().uuid(), topic: z.string(), locale: z.string(), status: z.string(), stage: z.string(), last_error: z.string().nullable(),
   created_at: z.string(), finished_at: z.string().nullable(),
@@ -32,25 +25,10 @@ const itemSchema = z.object({
 
 const STATUS_CLASS: Record<string, string> = { pass: "pm-pill-succeeded", flag: "pm-pill-running", fail: "pm-pill-dead", skipped: "pm-pill-canceled" };
 
-/** Translation shown next to the Spanish text: off (default: the map's own language only), Bengali, English or both. */
-const GLOSS_MODES = ["off", "bn", "en", "both"] as const;
-type GlossMode = (typeof GLOSS_MODES)[number];
-const GLOSS_LABEL: Record<GlossMode, string> = { off: "Off", bn: "বাংলা", en: "English", both: "Both" };
-
-/** gloss = {keyword:{en,bn}, title:{en,bn}} written by S7; anything else renders as nothing. */
-function glossLine(g: Record<string, unknown>, part: "keyword" | "title", mode: GlossMode): string {
-  if (mode === "off") return "";
-  const p = z.object({ en: z.string().optional(), bn: z.string().optional() }).safeParse(g[part]);
-  if (!p.success) return "";
-  const picked = mode === "bn" ? [p.data.bn] : mode === "en" ? [p.data.en] : [p.data.en, p.data.bn];
-  return picked.filter(Boolean).join(" · ");
-}
-
 export default async function MapResultPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ gloss?: string }> }) {
   const { role } = await requireAdmin();
   const id = idSchema.safeParse((await params).id);
-  const g = z.enum(GLOSS_MODES).safeParse((await searchParams).gloss);
-  const mode: GlossMode = g.success ? g.data : "off";
+  const mode: GlossMode = parseGlossMode((await searchParams).gloss);
   if (!id.success) notFound();
 
   const sb = createAdminClient();

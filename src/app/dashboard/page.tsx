@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import Link from "next/link";
 import { Coin, Logo } from "@/components/brand";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "./actions";
@@ -79,6 +80,7 @@ export default async function DashboardPage() {
               <div className="pm-ws-meta">
                 <span className="pm-pill pm-pill-role">{w.role}</span>
                 {w.trialCredits === null ? <span>Trial credits are granted once your email is confirmed.</span> : null}
+                <Link href="/maps">Topical maps &rarr;</Link>
               </div>
             </div>
             {w.trialCredits !== null ? (
