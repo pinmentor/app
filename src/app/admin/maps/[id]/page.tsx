@@ -4,6 +4,7 @@ import { z } from "zod";
 import { AdminShell } from "@/app/admin/admin-nav";
 import { requireAdmin } from "@/lib/admin/guard";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { formatSeconds, stageDurations, totalSeconds } from "@/modules/topical-map/timeline";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Map result — PinMentor Admin" };
@@ -19,6 +20,7 @@ const checkSchema = z.object({
 const reportSchema = z.object({ verdict: z.enum(["pass", "flag", "fail"]), checks: z.array(checkSchema), note: z.string().optional() });
 const runSchema = z.object({
   id: z.string().uuid(), topic: z.string(), locale: z.string(), status: z.string(), stage: z.string(), last_error: z.string().nullable(),
+  created_at: z.string(), finished_at: z.string().nullable(),
   target_min: z.number(), target_max: z.number(), params: z.record(z.string(), z.unknown()), stats: z.record(z.string(), z.unknown()), report: z.unknown(),
 });
 const siloSchema = z.object({ id: z.string().uuid(), name: z.string(), size: z.number(), gloss: z.record(z.string(), z.unknown()), position: z.number() });
@@ -52,7 +54,7 @@ export default async function MapResultPage({ params, searchParams }: { params: 
   if (!id.success) notFound();
 
   const sb = createAdminClient();
-  const runRes = await sb.from("map_runs").select("id, topic, locale, status, stage, last_error, target_min, target_max, params, stats, report").eq("id", id.data).maybeSingle();
+  const runRes = await sb.from("map_runs").select("id, topic, locale, status, stage, last_error, created_at, finished_at, target_min, target_max, params, stats, report").eq("id", id.data).maybeSingle();
   const run = runSchema.safeParse(runRes.data);
   if (!run.success) notFound();
   const [silosRes, itemsRes] = await Promise.all([
@@ -62,6 +64,11 @@ export default async function MapResultPage({ params, searchParams }: { params: 
   const silos = z.array(siloSchema).safeParse(silosRes.data ?? []);
   const items = z.array(itemSchema).safeParse(itemsRes.data ?? []);
   const report = reportSchema.safeParse(run.data.report);
+  const timing = stageDurations(run.data.created_at, run.data.stats.timeline, run.data.finished_at);
+  const total = totalSeconds(run.data.created_at, run.data.finished_at);
+  const sizing = z
+    .object({ mode: z.string(), ceiling: z.number(), kept: z.number(), natural: z.number(), trimmed: z.number(), facets: z.number().optional(), values_total: z.number().optional(), values_explored: z.number().optional(), expansion_calls: z.number().optional() })
+    .safeParse(run.data.stats.sizing);
 
   return (
     <AdminShell current="maps" role={role}>
@@ -74,6 +81,36 @@ export default async function MapResultPage({ params, searchParams }: { params: 
           </p>
         </div>
       </div>
+
+      <section className="pm-section">
+        <h2>Size and timing</h2>
+        {sizing.success ? (
+          <p>
+            {sizing.data.mode === "auto" ? (
+              <>
+                <strong>Auto size:</strong> the topic produced {sizing.data.natural} distinct articles; {sizing.data.kept} kept
+                {sizing.data.trimmed > 0 ? `, ${sizing.data.trimmed} lower-priority ones left out because the ceiling is ${sizing.data.ceiling}` : ` (ceiling ${sizing.data.ceiling} not reached)`}.
+              </>
+            ) : (
+              <>
+                <strong>Custom size:</strong> {sizing.data.kept} articles kept, {sizing.data.trimmed} over the maximum {sizing.data.ceiling} left out.
+              </>
+            )}
+            {sizing.data.values_total !== undefined && sizing.data.values_explored !== undefined
+              ? ` Explored ${sizing.data.values_explored} of ${sizing.data.values_total} facet values in ${sizing.data.expansion_calls ?? "?"} keyword calls.`
+              : ""}
+          </p>
+        ) : (
+          <p className="pm-muted">No size explanation yet.</p>
+        )}
+        {timing.length > 0 ? (
+          <p>
+            <strong>Time:</strong> {total !== null ? formatSeconds(total) : "running"} in total ·{" "}
+            {timing.map((t) => `${t.stage.replace(/^s\d+_/, "")} ${formatSeconds(t.seconds)}`).join(" · ")}
+          </p>
+        ) : null}
+        <p className="pm-muted">Stage times include the wait for the worker. The result is only a measurement; it does not change anything.</p>
+      </section>
 
       <section className="pm-section">
         <h2>Verification report {report.success ? <span className={`pm-pill ${STATUS_CLASS[report.data.verdict === "flag" ? "flag" : report.data.verdict] ?? ""}`}>{report.data.verdict}</span> : null}</h2>

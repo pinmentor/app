@@ -530,25 +530,30 @@ const s9verify: JobHandler = async (ctx) => {
   const droppedRes = await db().from("kw_candidates").select("id", { count: "exact", head: true }).eq("map_run_id", mapRunId).eq("status", "dropped");
   if (droppedRes.error) throw new JobError("dropped count failed", "db_error", { retryable: true });
   const trimmed = droppedRes.count ?? 0;
+  const statsRes = await db().from("map_runs").select("stats").eq("id", mapRunId).maybeSingle();
+  const planStats = z.object({ stats: z.object({ sizing_plan: z.object({ facets: z.number(), values_total: z.number(), values_explored: z.number(), expansion_calls: z.number() }).optional() }).passthrough() }).safeParse(statsRes.data);
+  const sizingPlan = planStats.success ? planStats.data.stats.sizing_plan : undefined;
+  const unexplored = sizingPlan ? Math.max(0, sizingPlan.values_total - sizingPlan.values_explored) : 0;
   const thresholds = thresholdsFor(run.params);
   const range = listRangeFor(run.params);
   const checks = [
     checkDuplicates(vitems, vpairs, thresholds.high),
-    checkCannibalization(vitems, vpairs),
+    checkCannibalization(vitems, vpairs, thresholds.low),
     checkCoverage(vitems, facets),
     checkIntent(vitems),
     checkLanguage(vitems, run.locale as Locale, qa),
     checkExistingContent(),
     checkPolicy(vitems),
     checkAudit(audit),
-    checkSizeBalance(vitems, silos, { min: run.target_min, max: run.target_max, auto: isAutoSize(run.params), trimmed }),
+    checkSizeBalance(vitems, silos, { min: run.target_min, max: run.target_max, auto: isAutoSize(run.params), trimmed, unexplored }),
     checkRules(vitems, range),
   ];
   const report = buildReport(checks);
   await rpc("map_run_set_report", { p_run: mapRunId, p_report: report });
 
   const cost = z.coerce.number().parse(await rpc("map_run_cost_usd", { p_run: mapRunId }));
-  const stats = { verdict: report.verdict, check_counts: report.counts, cost_usd: cost, independent_checks_by: { audit: audit.provider ?? null, language_qa: qa.provider ?? null } };
+  const sizing = { mode: isAutoSize(run.params) ? "auto" : "custom", ceiling: run.target_max, kept: plan.length, natural: plan.length + trimmed, trimmed, ...(sizingPlan ?? {}), values_unexplored: unexplored };
+  const stats = { sizing, verdict: report.verdict, check_counts: report.counts, cost_usd: cost, independent_checks_by: { audit: audit.provider ?? null, language_qa: qa.provider ?? null } };
   await rpc("map_run_merge_stats", { p_run: mapRunId, p_stats: stats });
   await rpc("map_snapshot_create", { p_run: mapRunId, p_summary: { verdict: report.verdict, counts: report.counts, plan_items: plan.length, silos: silos.length } });
   // The run succeeds even when the report is red: the work was delivered and paid for; a red report keeps the items in `draft`.

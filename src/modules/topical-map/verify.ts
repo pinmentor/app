@@ -51,14 +51,19 @@ export function checkDuplicates(items: VItem[], pairs: VPair[], high: number): C
   return check("V1", "Duplicates", "pass", "no duplicate primaries");
 }
 
-/** V2: the closest primary pairs with their verdicts (the user sees them). Pairs the judge called `same` that survived are the problem. */
-export function checkCannibalization(items: VItem[], pairs: VPair[]): Check {
+/**
+ * V2: the closest primary pairs with their verdicts (the user sees them). Risky = a survivor the judge called `same`,
+ * or a pair inside the judging band (cosine >= `low`) that was never judged. A pair below `low` is "different" by
+ * design (the judge only sees borderline pairs), so it is listed as such and is not a problem.
+ */
+export function checkCannibalization(items: VItem[], pairs: VPair[], low = 0.65): Check {
   const label = new Map(items.map((i) => [i.id, i.keyword]));
   const top = [...pairs].sort((x, y) => y.cosine - x.cosine || x.a.localeCompare(y.a) || x.b.localeCompare(y.b)).slice(0, 20);
-  const details = top.map((p) => ({ a: label.get(p.a) ?? p.a, b: label.get(p.b) ?? p.b, cosine: round2(p.cosine), verdict: p.verdict ?? "not judged" }));
-  const risky = top.filter((p) => p.verdict === "same" || p.verdict === null).length;
+  const verdictText = (p: VPair) => p.verdict ?? (p.cosine < low ? "below judging band (separate)" : "not judged");
+  const details = top.map((p) => ({ a: label.get(p.a) ?? p.a, b: label.get(p.b) ?? p.b, cosine: round2(p.cosine), verdict: verdictText(p) }));
+  const risky = top.filter((p) => p.verdict === "same" || (p.verdict === null && p.cosine >= low)).length;
   if (top.length === 0) return check("V2", "Cannibalization", "skipped", "no neighbour pairs available (no vectors)");
-  return check("V2", "Cannibalization", risky > 0 ? "flag" : "pass", risky > 0 ? `${risky} of the ${top.length} closest pairs are unadjudicated or marked same` : `the ${top.length} closest pairs are all adjudicated as separate`, details);
+  return check("V2", "Cannibalization", risky > 0 ? "flag" : "pass", risky > 0 ? `${risky} of the ${top.length} closest pairs are marked same or were never judged although they are close` : `the ${top.length} closest pairs are all separate (judged, or below the judging band)`, details);
 }
 
 /** V3: items per facet. A facet with under 40% of the average share (or none) is a gap the user can fill. */
@@ -151,7 +156,7 @@ export function checkAudit(a: Audit): Check {
   return check("V8", "Independent audit", status, summary, details.length > 0 ? details : undefined);
 }
 
-export type SizeTarget = { min: number; max: number; auto?: boolean; trimmed?: number };
+export type SizeTarget = { min: number; max: number; auto?: boolean; trimmed?: number; unexplored?: number };
 
 /**
  * V9: size, silo sizes inside 15-40, the A/B mix reported. Custom runs: inside the target range. Auto runs: the topic
@@ -164,10 +169,12 @@ export function checkSizeBalance(items: VItem[], silos: VSilo[], target: SizeTar
   const trimmed = target.trimmed ?? 0;
   const head = target.auto ? `${n} items (auto size, ceiling ${target.max})` : `${n} items (target ${target.min}-${target.max})`;
   const parts = [head, `${silos.length} silos, ${outside.length} outside ${siloRange.min}-${siloRange.max}`, `Type B ${b}, Type A ${n - b}`];
+  const unexplored = target.unexplored ?? 0;
   if (target.auto && trimmed > 0) parts.push(`ceiling reached: ${trimmed} lower-priority items left out (raise the ceiling to include them)`);
+  else if (target.auto && unexplored > 0) parts.push(`${unexplored} facet values were not explored: the topic may be larger than this map (raise the ceiling to look further)`);
   const details = outside.map((s) => ({ silo: s.name, size: s.size }));
   if (n > target.max) return check("V9", "Size & balance", "fail", parts.join("; "), details);
-  const small = (!target.auto && n < target.min) || outside.length > silos.length * 0.25 || (target.auto && trimmed > 0);
+  const small = (!target.auto && n < target.min) || outside.length > silos.length * 0.25 || (target.auto && (trimmed > 0 || unexplored > 0));
   return check("V9", "Size & balance", small ? "flag" : "pass", parts.join("; "), details.length > 0 ? details : undefined);
 }
 

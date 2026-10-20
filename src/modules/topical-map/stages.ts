@@ -72,6 +72,9 @@ const s1: JobHandler = async (ctx) => {
   }
 
   const tasks = planExpansion(facets, run.target_max);
+  // how much of the topic's facet space this run will explore (S9 turns it into the "why this size" explanation)
+  const valuesTotal = facets.reduce((n, f) => n + f.values.length, 0);
+  await rpc("map_run_merge_stats", { p_run: mapRunId, p_stats: { sizing_plan: { facets: facets.length, values_total: valuesTotal, values_explored: tasks.filter((t) => t.kind === "value").length, expansion_calls: tasks.length } } });
   const groups = chunk(tasks, LIMITS.tasksPerJob);
   for (const [i, group] of groups.entries()) {
     await enqueue(ctx, "map.s2_expand", { mapRunId, tasks: group }, `map:${mapRunId}:s2:${i}`, { provider: "anthropic", stage: "s2_expand" });

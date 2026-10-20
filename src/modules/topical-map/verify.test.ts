@@ -18,6 +18,13 @@ describe("V1/V2", () => {
     expect(c.count).toBe(20);
     expect(checkCannibalization([], []).status).toBe("skipped");
   });
+  it("an unjudged pair is only a problem inside the judging band", () => {
+    const below = [{ a: "a", b: "b", cosine: 0.5, verdict: null }];
+    expect(checkCannibalization([item({ id: "a" }), item({ id: "b" })], below, 0.65).status).toBe("pass");
+    const inside = [{ a: "a", b: "b", cosine: 0.7, verdict: null }];
+    expect(checkCannibalization([item({ id: "a" }), item({ id: "b" })], inside, 0.65).status).toBe("flag");
+    expect(checkCannibalization([item({ id: "a" }), item({ id: "b" })], [{ a: "a", b: "b", cosine: 0.4, verdict: "same" }], 0.65).status).toBe("flag");
+  });
 });
 
 describe("V3/V4", () => {
@@ -75,6 +82,9 @@ describe("V8/V9/V10", () => {
     const hit = checkSizeBalance(items, silos, { min: 10, max: 200, auto: true, trimmed: 12 });
     expect(hit.status).toBe("flag");
     expect(hit.summary).toContain("ceiling reached: 12");
+    const more = checkSizeBalance(items, silos, { min: 10, max: 200, auto: true, unexplored: 30 });
+    expect(more.status).toBe("flag");
+    expect(more.summary).toContain("30 facet values were not explored");
   });
   it("rules: year in slug, duplicate slug, list number out of range fail; fallback title flags", () => {
     const range = { min: 7, max: 35 };
