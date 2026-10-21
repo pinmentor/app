@@ -556,7 +556,7 @@ const s9verify: JobHandler = async (ctx) => {
   const stats = { sizing, verdict: report.verdict, check_counts: report.counts, cost_usd: cost, independent_checks_by: { audit: audit.provider ?? null, language_qa: qa.provider ?? null } };
   await rpc("map_run_merge_stats", { p_run: mapRunId, p_stats: stats });
   await rpc("map_snapshot_create", { p_run: mapRunId, p_summary: { verdict: report.verdict, counts: report.counts, plan_items: plan.length, silos: silos.length } });
-  // The run succeeds even when the report is red: the work was delivered and paid for; a red report keeps the items in `draft`.
+  // The run succeeds even when the report is red: the work was delivered and paid for; a red report keeps approval blocked, so the items stay `proposed`.
   await rpc("map_run_finish", { p_run: mapRunId, p_status: "succeeded" });
   return stats;
 };

@@ -158,8 +158,8 @@ insert into t_ids select 'itemB0', id from public.plan_items where keyword = 'q0
 update public.silos set pillar_item_id = pg_temp.j('itemA0') where id = pg_temp.j('siloA');
 
 insert into t_results (who, test, actual, expected) values
-  ('items', 'defaults: status draft, decision separate, 1500 words, empty variants / flags',
-     (select status || '/' || decision || '/' || target_words || '/' || cardinality(variants) || '/' || cardinality(flags) from public.plan_items where id = pg_temp.j('itemA0')), 'draft/separate/1500/0/0'),
+  ('items', 'defaults: status proposed, decision separate, 1500 words, empty variants / flags',
+     (select status || '/' || decision || '/' || target_words || '/' || cardinality(variants) || '/' || cardinality(flags) from public.plan_items where id = pg_temp.j('itemA0')), 'proposed/separate/1500/0/0'),
   ('items', 'bad slug, bad type, duplicate primary are refused (23514 / 23514 / 23505)',
      pg_temp.try(format($q$update public.plan_items set slug = 'Bad Slug' where id = %L$q$, pg_temp.j('itemA0'))) || '/' ||
      pg_temp.try(format($q$update public.plan_items set article_type = 'C' where id = %L$q$, pg_temp.j('itemA0'))) || '/' ||
@@ -178,8 +178,8 @@ insert into t_results (who, test, actual, expected) values
   ('apply', 'titles, slug, gloss and flags are stored; a missing key keeps the old value',
      (select title || '/' || slug || '/' || jsonb_array_length(title_options) || '/' || (gloss ->> 'en') || '/' || array_to_string(flags, ',') from public.plan_items where id = pg_temp.j('itemA0')),
      'Los 27 Mejores Peinados/peinados-faciles/2/easy hairstyles/title_fallback'),
-  ('apply', 'the second item only got its slug (title stays null, status stays draft)',
-     (select coalesce(title, '<null>') || '/' || slug || '/' || status from public.plan_items where id = pg_temp.j('itemA1')), '<null>/plancha-pelo/draft');
+  ('apply', 'the second item only got its slug (title stays null, status stays proposed)',
+     (select coalesce(title, '<null>') || '/' || slug || '/' || status from public.plan_items where id = pg_temp.j('itemA1')), '<null>/plancha-pelo/proposed');
 set role service_role;
 insert into t_results (who, test, actual, expected) values
   ('apply', 'a duplicate slug inside one run is refused and the whole call changes nothing',

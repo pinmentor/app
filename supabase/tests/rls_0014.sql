@@ -174,7 +174,7 @@ insert into t_results (who, test, actual, expected) values
      pg_temp.try(format($q$select public.plan_item_merge(%L, %L, %L, %L)$q$, pg_temp.ua(), pg_temp.j('ok'), pg_temp.j('i6'), pg_temp.j('i7'))) || '/' ||
      pg_temp.try(format($q$select public.plan_item_merge(%L, %L, %L, %L)$q$, pg_temp.ua(), pg_temp.j('ok'), pg_temp.j('i7'), pg_temp.j('i6'))) || '/' ||
      pg_temp.try(format($q$select public.plan_items_move(%L, %L, %L, %L)$q$, pg_temp.ua(), pg_temp.j('ok'), array[pg_temp.j('i6')], pg_temp.j('s1'))), 'err:PM003/err:PM003/err:PM003');
-select public.plan_items_set_status(pg_temp.ua(), pg_temp.j('ok'), array[pg_temp.j('i6')], 'draft');
+select public.plan_items_set_status(pg_temp.ua(), pg_temp.j('ok'), array[pg_temp.j('i6')], 'proposed');
 insert into t_results (who, test, actual, expected) values
   ('gate', 'after back to draft the same move works', public.plan_items_move(pg_temp.ua(), pg_temp.j('ok'), array[pg_temp.j('i6')], pg_temp.j('s1'))::text, '1');
 reset role;

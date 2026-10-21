@@ -35,11 +35,17 @@ describe("review form", () => {
     expect(parseReviewForm(form({ run: RUN, intent: "reject", id: ["not-a-uuid"] }))).toBeNull();
   });
   it("a bad gloss value becomes off, intents map to statuses", () => {
-    expect(parseReviewForm(form({ run: RUN, intent: "draft", id: [I1], gloss: "xx" }))?.gloss).toBe("off");
-    expect([statusForIntent("approve"), statusForIntent("reject"), statusForIntent("draft")]).toEqual(["approved", "rejected", "draft"]);
+    expect(parseReviewForm(form({ run: RUN, intent: "proposed", id: [I1], gloss: "xx" }))?.gloss).toBe("off");
+    expect([statusForIntent("approve"), statusForIntent("reject"), statusForIntent("proposed")]).toEqual(["approved", "rejected", "proposed"]);
   });
   it("counts statuses", () => {
-    expect(statusCounts(["draft", "approved", "approved", "rejected", "weird"])).toEqual({ draft: 1, approved: 2, rejected: 1 });
+    const c = statusCounts(["proposed", "approved", "approved", "rejected", "in_batch", "draft", "weird"]);
+    expect(c).toMatchObject({ proposed: 1, approved: 2, rejected: 1, in_batch: 1, writing: 0, done: 0 });
+    expect(Object.keys(c)).toHaveLength(12);
+    expect((c as Record<string, number>).draft).toBe(undefined);
+  });
+  it("the old intent name draft is no longer accepted", () => {
+    expect(parseReviewForm(form({ run: RUN, intent: "draft", id: [I1] }))).toBeNull();
   });
 });
 

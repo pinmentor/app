@@ -4,6 +4,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { GLOSS_LABEL, GLOSS_MODES, glossLine, parseGlossMode, reportSchema, statusCounts, type GlossMode } from "@/modules/topical-map/review-view";
 import { AppFrame } from "../chrome";
+import { MapTabs } from "../map-tabs";
 import { editItems, reviewItems } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -20,11 +21,15 @@ const itemSchema = z.object({
 });
 const sizingSchema = z.object({ mode: z.string(), ceiling: z.number(), kept: z.number(), natural: z.number(), trimmed: z.number() });
 
-const PILL: Record<string, string> = { pass: "pm-pill-succeeded", flag: "pm-pill-running", fail: "pm-pill-dead", skipped: "pm-pill-canceled", approved: "pm-pill-succeeded", rejected: "pm-pill-dead", draft: "pm-pill-canceled" };
+const PILL: Record<string, string> = { pass: "pm-pill-succeeded", flag: "pm-pill-running", fail: "pm-pill-dead", skipped: "pm-pill-canceled", approved: "pm-pill-succeeded", rejected: "pm-pill-dead", proposed: "pm-pill-canceled", in_batch: "pm-pill-running", already_exists: "pm-pill-canceled" };
+const LABEL: Record<string, string> = { proposed: "to review", in_batch: "in a batch", draft_ready: "draft ready", in_review: "in review", pins_pending: "pins pending", already_exists: "already exists" };
+// items in these statuses may still be restructured (same rule as plan_item_is_frozen in 0015)
+const EDITABLE = new Set(["proposed", "rejected", "already_exists"]);
 const FLASH: Record<string, { text: string; bad: boolean }> = {
-  blocked: { text: "Approval is blocked: the verification report is red (or missing). Rejecting and going back to draft still work.", bad: true },
+  blocked: { text: "Approval is blocked: the verification report is red (or missing). Rejecting and sending articles back to review still work.", bad: true },
   forbidden: { text: "You cannot change this map.", bad: true },
-  locked: { text: "Not changed: approved items, group main articles (pillars) and unfinished maps cannot be restructured. Send approved items back to review first.", bad: true },
+  locked: { text: "Not changed: approved items, items in a batch, group main articles (pillars) and unfinished maps cannot be restructured. Send approved items back to review first.", bad: true },
+  inbatch: { text: "Not changed: an article you picked is already in a batch (or further). Take it out of its batch on the Batches tab first.", bad: true },
   gone: { text: "Not changed: an item, variant or group was not found (the page may be out of date). Refresh and try again.", bad: true },
   pick: { text: "Not changed: pick exactly two items for Merge, or at least one item and a target group for Move.", bad: true },
   error: { text: "Something went wrong. Nothing was changed; please try again.", bad: true },
@@ -53,7 +58,7 @@ export default async function ReviewMapPage({ params, searchParams }: { params: 
   const items = z.array(itemSchema).safeParse(itemsRes.data ?? []);
   const report = reportSchema.safeParse(run.data.report);
   const sizing = sizingSchema.safeParse(run.data.stats.sizing);
-  const counts = items.success ? statusCounts(items.data.map((i) => i.status)) : { draft: 0, approved: 0, rejected: 0 };
+  const counts = items.success ? statusCounts(items.data.map((i) => i.status)) : statusCounts([]);
   const blocked = run.data.status !== "succeeded" || !report.success || report.data.verdict === "fail";
   const flash = sp.flash ? FLASH[sp.flash] ?? (sp.flash.startsWith("edited-") ? { text: sp.flash === "edited-merge" ? "Merged. The second item is now a variant of the first." : sp.flash === "edited-split" ? "Split. The variant is a new item without a title yet (flag: needs_title)." : "Moved. Links of the affected groups were rebuilt.", bad: false } : sp.flash.startsWith("done-") ? { text: `Done: ${sp.flash.slice(5)} item(s) changed.`, bad: false } : undefined) : undefined;
   const link = (m: GlossMode) => `/maps/${run.data.id}?gloss=${m}`;
@@ -64,8 +69,9 @@ export default async function ReviewMapPage({ params, searchParams }: { params: 
         <Link href="/maps">&larr; All maps</Link>
       </p>
       <h1>{run.data.topic}</h1>
+      <MapTabs id={run.data.id} current="review" />
       <p className="pm-muted">
-        {run.data.locale} · {sizing.success ? `${sizing.data.kept} articles${sizing.data.mode === "auto" ? " (auto size)" : ""}${sizing.data.trimmed > 0 ? `, ${sizing.data.trimmed} more found but left out by the limit of ${sizing.data.ceiling}` : ""}` : `up to ${run.data.target_max} articles`} · approved {counts.approved}, rejected {counts.rejected}, to review {counts.draft}
+        {run.data.locale} · {sizing.success ? `${sizing.data.kept} articles${sizing.data.mode === "auto" ? " (auto size)" : ""}${sizing.data.trimmed > 0 ? `, ${sizing.data.trimmed} more found but left out by the limit of ${sizing.data.ceiling}` : ""}` : `up to ${run.data.target_max} articles`} · approved {counts.approved}, rejected {counts.rejected}, to review {counts.proposed}, in a batch or further {items.success ? items.data.length - counts.proposed - counts.approved - counts.rejected - counts.already_exists : 0}
       </p>
       {flash ? <p className={flash.bad ? "pm-note pm-note-bad" : "pm-note"}>{flash.text}</p> : null}
 
@@ -130,7 +136,7 @@ export default async function ReviewMapPage({ params, searchParams }: { params: 
               const mine = items.data.filter((i) => i.silo_id === s.id);
               const sg = glossLine({ keyword: s.gloss }, "keyword", mode);
               const others = silos.data.filter((o) => o.id !== s.id);
-              const variantOptions = mine.filter((i) => i.status !== "approved").flatMap((i) => i.variants.map((v) => ({ value: `${i.id}|${v}`, label: `${v} (from ${i.keyword})` })));
+              const variantOptions = mine.filter((i) => EDITABLE.has(i.status)).flatMap((i) => i.variants.map((v) => ({ value: `${i.id}|${v}`, label: `${v} (from ${i.keyword})` })));
               return (
                 <form key={s.id} action={reviewItems} style={{ marginTop: "1.5rem" }}>
                   <input type="hidden" name="run" value={run.data.id} />
@@ -162,7 +168,7 @@ export default async function ReviewMapPage({ params, searchParams }: { params: 
                               </td>
                               <td>{i.article_type === "B" ? "Product / comparison" : "Ideas / list"}</td>
                               <td className="pm-num">{i.list_count ?? ""}</td>
-                              <td><span className={`pm-pill ${PILL[i.status] ?? ""}`}>{i.status}</span></td>
+                              <td><span className={`pm-pill ${PILL[i.status] ?? ""}`}>{LABEL[i.status] ?? i.status}</span></td>
                               <td>{i.flags.join(", ")}</td>
                             </tr>
                           );
@@ -173,7 +179,7 @@ export default async function ReviewMapPage({ params, searchParams }: { params: 
                   <div className="pm-inline" style={{ gap: "0.5rem", marginTop: "0.5rem" }}>
                     <button type="submit" name="intent" value="approve" className="pm-btn pm-btn-brand pm-btn-sm" disabled={blocked}>Approve selected</button>
                     <button type="submit" name="intent" value="reject" className="pm-btn pm-btn-ghost pm-btn-sm">Reject selected</button>
-                    <button type="submit" name="intent" value="draft" className="pm-btn pm-btn-quiet pm-btn-sm">Back to review</button>
+                    <button type="submit" name="intent" value="proposed" className="pm-btn pm-btn-quiet pm-btn-sm">Back to review</button>
                   </div>
                   <details style={{ marginTop: "0.5rem" }}>
                     <summary className="pm-muted">Edit structure: merge, move, split</summary>

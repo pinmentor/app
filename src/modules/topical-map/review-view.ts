@@ -31,16 +31,21 @@ export function glossLine(g: Record<string, unknown>, part: "keyword" | "title",
   return picked.filter(Boolean).join(" · ");
 }
 
-export const ITEM_STATUSES = ["draft", "approved", "rejected"] as const;
+/** All item statuses of PLAN §4.1 (0015). People set only REVIEW_STATUSES from the review page; the rest follow the workflow. */
+export const ITEM_STATUSES = [
+  "proposed", "approved", "in_batch", "writing", "draft_ready", "in_review", "scheduled", "published", "pins_pending", "done", "rejected", "already_exists",
+] as const;
+export type ItemStatus = (typeof ITEM_STATUSES)[number];
+export const REVIEW_STATUSES = ["proposed", "approved", "rejected"] as const;
 
-export function statusCounts(statuses: string[]): Record<(typeof ITEM_STATUSES)[number], number> {
-  const out = { draft: 0, approved: 0, rejected: 0 };
-  for (const s of statuses) if (s === "draft" || s === "approved" || s === "rejected") out[s] += 1;
+export function statusCounts(statuses: string[]): Record<ItemStatus, number> {
+  const out = Object.fromEntries(ITEM_STATUSES.map((s) => [s, 0])) as Record<ItemStatus, number>;
+  for (const s of statuses) if ((ITEM_STATUSES as readonly string[]).includes(s)) out[s as ItemStatus] += 1;
   return out;
 }
 
 /** The review form: which items, what to do. `approve_clean` needs no ids. */
-export const REVIEW_INTENTS = ["approve", "reject", "draft", "approve_clean"] as const;
+export const REVIEW_INTENTS = ["approve", "reject", "proposed", "approve_clean"] as const;
 export const reviewFormSchema = z.object({
   run: z.string().uuid(),
   intent: z.enum(REVIEW_INTENTS),
@@ -56,8 +61,8 @@ export function parseReviewForm(fd: FormData): z.infer<typeof reviewFormSchema> 
 }
 
 /** Status the SQL function gets for an intent (approve_clean has its own function). */
-export function statusForIntent(intent: "approve" | "reject" | "draft"): (typeof ITEM_STATUSES)[number] {
-  return intent === "approve" ? "approved" : intent === "reject" ? "rejected" : "draft";
+export function statusForIntent(intent: "approve" | "reject" | "proposed"): (typeof REVIEW_STATUSES)[number] {
+  return intent === "approve" ? "approved" : intent === "reject" ? "rejected" : "proposed";
 }
 
 /**

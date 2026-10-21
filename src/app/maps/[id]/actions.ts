@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { parseEditForm, parseReviewForm, statusForIntent } from "@/modules/topical-map/review-view";
 
 /**
- * Approve / reject / back to draft for the items of one map. The user is authenticated here (session); the SQL
+ * Approve / reject / back to review for the items of one map. The user is authenticated here (session); the SQL
  * function re-checks membership, the finished-run and not-red-report rules, so the rules do not depend on this code.
  */
 export async function reviewItems(formData: FormData) {
@@ -30,7 +30,7 @@ export async function reviewItems(formData: FormData) {
   revalidatePath(`/maps/${form.run}`);
   if (res.error) {
     console.error("plan review failed", res.error.code ?? "no_code");
-    redirect(back(res.error.code === "PM003" ? "blocked" : res.error.code === "42501" || res.error.code === "PM004" ? "forbidden" : "error"));
+    redirect(back(res.error.code === "PM003" ? (res.error.message?.includes("item_in_progress") ? "inbatch" : "blocked") : res.error.code === "42501" || res.error.code === "PM004" ? "forbidden" : "error"));
   }
   redirect(back(`done-${typeof res.data === "number" ? res.data : 0}`));
 }

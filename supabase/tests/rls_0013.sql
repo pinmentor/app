@@ -70,7 +70,7 @@ grant all on t_calls to anon, authenticated, service_role;
 insert into t_calls values ('approve12', public.plan_items_set_status('a1310101-0000-0000-0000-000000000001', pg_temp.j('ok'), pg_temp.ids('ok', 1, 2), 'approved')::text);
 insert into t_calls values ('approve12_again', public.plan_items_set_status('a1310101-0000-0000-0000-000000000001', pg_temp.j('ok'), pg_temp.ids('ok', 1, 2), 'approved')::text);
 insert into t_calls values ('reject3', public.plan_items_set_status('a1310101-0000-0000-0000-000000000001', pg_temp.j('ok'), pg_temp.ids('ok', 3, 3), 'rejected')::text);
-insert into t_calls values ('back2', public.plan_items_set_status('a1310101-0000-0000-0000-000000000001', pg_temp.j('ok'), pg_temp.ids('ok', 2, 2), 'draft')::text);
+insert into t_calls values ('back2', public.plan_items_set_status('a1310101-0000-0000-0000-000000000001', pg_temp.j('ok'), pg_temp.ids('ok', 2, 2), 'proposed')::text);
 reset role;
 insert into t_results (who, test, actual, expected) values
   ('status', 'approve two items on a flag report: 2 changed, replay changes 0',
@@ -78,7 +78,7 @@ insert into t_results (who, test, actual, expected) values
   ('status', 'reject one and send one back to draft: 1 changed each',
      (select v from t_calls where k = 'reject3') || '/' || (select v from t_calls where k = 'back2'), '1/1'),
   ('status', 'counts: approved 1, rejected 1, draft 4',
-     pg_temp.cnt('ok', 'approved') || '/' || pg_temp.cnt('ok', 'rejected') || '/' || pg_temp.cnt('ok', 'draft'), '1/1/4');
+     pg_temp.cnt('ok', 'approved') || '/' || pg_temp.cnt('ok', 'rejected') || '/' || pg_temp.cnt('ok', 'proposed'), '1/1/4');
 
 -- approve_clean: of the 4 drafts (i2, i4 clean; i5, i6 flagged) only clean ones; i2 and i4 -> 2 changed
 set role service_role;
@@ -89,7 +89,7 @@ insert into t_results (who, test, actual, expected) values
   ('clean', 'approve-clean approves only draft items without flags; replay 0',
      (select v from t_calls where k = 'clean') || '/' || (select v from t_calls where k = 'clean_again'), '2/0'),
   ('clean', 'flagged items stay draft; the rejected one stays rejected',
-     (select count(*)::text from public.plan_items where map_run_id = pg_temp.j('ok') and status = 'draft' and cardinality(flags) > 0) || '/' || pg_temp.cnt('ok', 'rejected'), '2/1');
+     (select count(*)::text from public.plan_items where map_run_id = pg_temp.j('ok') and status = 'proposed' and cardinality(flags) > 0) || '/' || pg_temp.cnt('ok', 'rejected'), '2/1');
 
 -- ===========================================================================
 -- Gates
@@ -99,7 +99,7 @@ insert into t_results (who, test, actual, expected) values
   ('gate', 'a red (fail) report blocks approval (PM003) but not reject / draft',
      pg_temp.try(format($q$select public.plan_items_set_status('a1310101-0000-0000-0000-000000000001', %L, %L, 'approved')$q$, pg_temp.j('red'), pg_temp.ids('red', 1, 2))) || '/' ||
      pg_temp.try(format($q$select public.plan_items_set_status('a1310101-0000-0000-0000-000000000001', %L, %L, 'rejected')$q$, pg_temp.j('red'), pg_temp.ids('red', 1, 2))) || '/' ||
-     pg_temp.try(format($q$select public.plan_items_set_status('a1310101-0000-0000-0000-000000000001', %L, %L, 'draft')$q$, pg_temp.j('red'), pg_temp.ids('red', 1, 2))),
+     pg_temp.try(format($q$select public.plan_items_set_status('a1310101-0000-0000-0000-000000000001', %L, %L, 'proposed')$q$, pg_temp.j('red'), pg_temp.ids('red', 1, 2))),
      'err:PM003/ok/ok'),
   ('gate', 'approve-clean on a red report is blocked too',
      pg_temp.try(format($q$select public.plan_items_approve_clean('a1310101-0000-0000-0000-000000000001', %L)$q$, pg_temp.j('red'))), 'err:PM003'),
@@ -116,7 +116,7 @@ insert into t_results (who, test, actual, expected) values
 reset role;
 insert into t_results (who, test, actual, expected) values
   ('gate', 'the stranger changed nothing; the red run is unchanged (all draft)',
-     pg_temp.cnt('ok', 'rejected') || '/' || pg_temp.cnt('red', 'draft'), '1/6');
+     pg_temp.cnt('ok', 'rejected') || '/' || pg_temp.cnt('red', 'proposed'), '1/6');
 
 -- items of another run are never touched, even when their ids are passed
 set role service_role;
@@ -124,7 +124,7 @@ insert into t_calls values ('cross', public.plan_items_set_status('a1310101-0000
 reset role;
 insert into t_results (who, test, actual, expected) values
   ('gate', 'ids of another run are ignored (0 changed, the other run untouched)',
-     (select v from t_calls where k = 'cross') || '/' || pg_temp.cnt('red', 'draft'), '0/6');
+     (select v from t_calls where k = 'cross') || '/' || pg_temp.cnt('red', 'proposed'), '0/6');
 
 -- authenticated users cannot call the functions (service role only)
 set role authenticated;

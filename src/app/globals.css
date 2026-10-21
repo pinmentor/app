@@ -1257,6 +1257,130 @@
     width: 100%;
   }
 
+
+  /* ---------- map views: tabs, dashboard counters, group cards (Batch 11) ---------- */
+  .pm-tabs {
+    display: flex;
+    gap: 0.25rem;
+    margin: 0.5rem 0 1.25rem;
+    border-bottom: 2px solid var(--line);
+  }
+  .pm-tab {
+    margin-bottom: -2px;
+    padding: 0.5rem 1rem;
+    border-bottom: 3px solid transparent;
+    color: var(--ink-soft);
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .pm-tab:hover {
+    color: var(--brand);
+  }
+  .pm-tab-on {
+    border-bottom-color: var(--brand);
+    color: var(--ink);
+  }
+  .pm-counters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+  @media (min-width: 40rem) {
+    .pm-counters {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+  }
+  .pm-counter {
+    padding: 0.8rem 1rem;
+    border: 1.5px solid var(--line);
+    border-radius: 14px;
+    background: var(--surface);
+  }
+  .pm-counter b {
+    display: block;
+    color: var(--brand);
+    font-family: var(--font-display);
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .pm-counter span {
+    display: block;
+    margin-top: 0.3rem;
+    font-weight: 650;
+  }
+  .pm-counter small {
+    display: block;
+    color: var(--ink-soft);
+    font-size: 0.75rem;
+  }
+  .pm-silocards {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  @media (min-width: 40rem) {
+    .pm-silocards {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (min-width: 64rem) {
+    .pm-silocards {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+  .pm-sc {
+    padding: 1rem;
+    border: 1.5px solid var(--line);
+    border-radius: 16px;
+    background: var(--surface);
+  }
+  .pm-sc-head {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+  }
+  .pm-sc-head h3 {
+    margin: 0;
+    font-size: 1.05rem;
+    line-height: 1.2;
+  }
+  .pm-sc-head p {
+    margin: 0.15rem 0 0;
+  }
+  .pm-sc-by {
+    margin: 0.7rem 0 0;
+    font-size: 0.8125rem;
+  }
+  .pm-sc-next {
+    margin: 0.6rem 0 0;
+    padding-top: 0.6rem;
+    border-top: 1px dashed var(--line);
+    font-size: 0.9rem;
+  }
+  .pm-ring {
+    --p: 0%;
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 50%;
+    background: conic-gradient(var(--brand) var(--p), var(--brand-soft) 0);
+  }
+  .pm-ring span {
+    display: grid;
+    place-items: center;
+    width: 2.7rem;
+    height: 2.7rem;
+    border-radius: 50%;
+    background: var(--surface);
+    font-size: 0.75rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
 }
 
 @media (prefers-reduced-motion: no-preference) {
