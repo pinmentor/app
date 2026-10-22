@@ -16,7 +16,7 @@ export async function requestGloss(formData: FormData) {
   const run = String(formData.get("run") ?? "");
   const f = form.safeParse({ run, article: formData.get("article"), lang: formData.get("lang") });
   if (!f.success) redirect(/^[0-9a-f-]{36}$/i.test(run) ? `/maps/${run}/batches` : "/maps");
-  const back = (flash: string) => `/maps/${f.data.run}/articles/${f.data.article}?lang=${f.data.lang}&flash=${flash}`;
+  const back = (flash: string) => `/maps/${f.data.run}/articles/${f.data.article}?tab=translation&lang=${f.data.lang}&flash=${flash}`;
 
   const supabase = await createClient();
   const {

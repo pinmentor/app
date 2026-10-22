@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { GLOSS_LABEL, GLOSS_MODES, glossLine, parseGlossMode, reportSchema, statusCounts, type GlossMode } from "@/modules/topical-map/review-view";
 import { AppFrame } from "../chrome";
 import { MapTabs } from "../map-tabs";
+import { NextStepCard } from "../next-step-card";
+import { loadMap, nextInputOf } from "./load";
 import { editItems, reviewItems } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -61,6 +63,7 @@ export default async function ReviewMapPage({ params, searchParams }: { params: 
   const counts = items.success ? statusCounts(items.data.map((i) => i.status)) : statusCounts([]);
   const blocked = run.data.status !== "succeeded" || !report.success || report.data.verdict === "fail";
   const flash = sp.flash ? FLASH[sp.flash] ?? (sp.flash.startsWith("edited-") ? { text: sp.flash === "edited-merge" ? "Merged. The second item is now a variant of the first." : sp.flash === "edited-split" ? "Split. The variant is a new item without a title yet (flag: needs_title)." : "Moved. Links of the affected groups were rebuilt.", bad: false } : sp.flash.startsWith("done-") ? { text: `Done: ${sp.flash.slice(5)} item(s) changed.`, bad: false } : undefined) : undefined;
+  const loaded = await loadMap(supabase, id.data);
   const link = (m: GlossMode) => `/maps/${run.data.id}?gloss=${m}`;
 
   return (
@@ -70,6 +73,7 @@ export default async function ReviewMapPage({ params, searchParams }: { params: 
       </p>
       <h1>{run.data.topic}</h1>
       <MapTabs id={run.data.id} current="review" />
+      {loaded ? <NextStepCard runId={run.data.id} input={nextInputOf(loaded)} /> : null}
       <p className="pm-muted">
         {run.data.locale} · {sizing.success ? `${sizing.data.kept} articles${sizing.data.mode === "auto" ? " (auto size)" : ""}${sizing.data.trimmed > 0 ? `, ${sizing.data.trimmed} more found but left out by the limit of ${sizing.data.ceiling}` : ""}` : `up to ${run.data.target_max} articles`} · approved {counts.approved}, rejected {counts.rejected}, to review {counts.proposed}, in a batch or further {items.success ? items.data.length - counts.proposed - counts.approved - counts.rejected - counts.already_exists : 0}
       </p>

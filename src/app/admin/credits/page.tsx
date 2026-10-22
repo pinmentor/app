@@ -50,10 +50,7 @@ export default async function CreditsPage({ searchParams }: { searchParams: Prom
       <div className="pm-pagehead">
         <div>
           <h1>Credit prices</h1>
-          <p>
-            What each action costs the customer, in credits. Prices are set here by a superadmin and nowhere else; there is no
-            built-in default. Below you can see what the AI calls really cost us (last {DAYS} days) to decide a price.
-          </p>
+          <p>What a customer pays, in credits. Only a superadmin can change it. There is no built-in price: until you set one, writing is blocked.</p>
         </div>
       </div>
 
@@ -63,6 +60,38 @@ export default async function CreditsPage({ searchParams }: { searchParams: Prom
         </p>
       ) : null}
       {failed ? <p className="pm-note pm-note-bad">Could not load everything. Check that migrations 0017 and 0018 are applied.</p> : null}
+
+      <section className="pm-price" aria-labelledby="price-h">
+        <div>
+          <h2 id="price-h">Price to write one article</h2>
+          <p className="pm-muted" style={{ margin: "0.2rem 0 0" }}>Credits taken per article that comes out ready. A failed article is free. 0 = free (for testing).</p>
+        </div>
+        {rows.get("article_write") ? <span className="pm-bignum">{rows.get("article_write")?.credits}</span> : <span className="pm-bignum pm-bignum-plain">not set</span>}
+        {may ? (
+          <form action={setRate} className="pm-inline" style={{ gap: "0.5rem" }}>
+            <input type="hidden" name="action" value="article_write" />
+            <input name="credits" type="number" min={0} max={100000} step={1} required defaultValue={rows.get("article_write")?.credits} aria-label="Credits per article" placeholder="credits" className="pm-input" style={{ width: "7rem" }} />
+            <button type="submit" className="pm-btn pm-btn-primary">Save price</button>
+          </form>
+        ) : null}
+      </section>
+
+      <section className="pm-section">
+        <h2>What one article really costs us</h2>
+        {ready ? (
+          <p>
+            Average over {ready.articles} ready article{ready.articles === 1 ? "" : "s"} (last {DAYS} days): <span className="pm-bignum pm-bignum-plain">{usd(ready.avg_cost_usd)}</span>{" "}
+            <span className="pm-muted">
+              per article · {tokens(ready.avg_input_tok)} input and {tokens(ready.avg_output_tok)} output tokens · cheapest {usd(ready.min_cost_usd)}, dearest {usd(ready.max_cost_usd)}
+            </span>
+          </p>
+        ) : (
+          <p>No article has been written yet. Write one small batch (with the price set to 0) and the real cost appears here.</p>
+        )}
+      </section>
+
+      <details className="pm-more">
+        <summary>Details: all prices and AI cost by task</summary>
 
       <h2>Prices</h2>
       <div className="pm-tablewrap">
@@ -118,16 +147,7 @@ export default async function CreditsPage({ searchParams }: { searchParams: Prom
         <code>article_write</code> has no price, running a batch is refused. A price of 0 makes a run free (useful for testing).
       </p>
 
-      <h2>What an article really costs us</h2>
-      {ready ? (
-        <p>
-          Average over {ready.articles} ready article{ready.articles === 1 ? "" : "s"} in the last {DAYS} days:{" "}
-          <strong>{usd(ready.avg_cost_usd)}</strong> each ({tokens(ready.avg_input_tok)} input and {tokens(ready.avg_output_tok)} output tokens, about{" "}
-          {ready.avg_calls === null ? "—" : ready.avg_calls.toFixed(1)} AI calls). Cheapest {usd(ready.min_cost_usd)}, dearest {usd(ready.max_cost_usd)}.
-        </p>
-      ) : (
-        <p>No article has been written yet. Run one batch (with a price of 0 if you like) and the real numbers appear here.</p>
-      )}
+      <h2>Articles by status</h2>
       <div className="pm-tablewrap">
         <table className="pm-table">
           <thead>
@@ -163,6 +183,7 @@ export default async function CreditsPage({ searchParams }: { searchParams: Prom
         </table>
       </div>
       <p className="pm-keymeta">Costs are what the AI providers charge us in USD, as recorded per call. The total includes failed calls when the provider billed for them.</p>
+      </details>
     </AdminShell>
   );
 }

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { suggestBatches, type SuggestedBatch } from "@/modules/topical-map/batching";
+import { DEFAULT_BATCH_SIZE, suggestBatches, type SuggestedBatch } from "@/modules/topical-map/batching";
+import type { NextInput } from "@/modules/topical-map/next-step";
 
 type Db = Awaited<ReturnType<typeof createClient>>;
 
@@ -58,4 +59,15 @@ export function suggestFor(map: LoadedMap, size: number): SuggestedBatch[] {
     .filter((i) => i.status === "approved" && !i.batch_id)
     .map((i) => ({ id: i.id, siloId: i.silo_id, priority: i.priority, position: i.position, isPillar: pillarIds.has(i.id) && pillarOf.get(i.silo_id ?? "") === i.id }));
   return suggestBatches(free, map.silos.map((s) => ({ id: s.id, name: s.name, position: s.position })), size, waiting);
+}
+
+/** The state the next-step card needs, from one loaded map. */
+export function nextInputOf(map: LoadedMap): NextInput {
+  return {
+    finished: map.run.status === "succeeded",
+    items: map.items,
+    batches: map.batches,
+    articles: map.articles,
+    suggested: suggestFor(map, DEFAULT_BATCH_SIZE).length,
+  };
 }

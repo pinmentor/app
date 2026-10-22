@@ -7,7 +7,8 @@ import { counters, siloProgress } from "@/modules/topical-map/dashboard";
 import { ITEM_STATUSES } from "@/modules/topical-map/review-view";
 import { AppFrame } from "../../chrome";
 import { MapTabs } from "../../map-tabs";
-import { loadMap, suggestFor } from "../load";
+import { NextStepCard } from "../../next-step-card";
+import { loadMap, nextInputOf, suggestFor } from "../load";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Map dashboard — PinMentor" };
@@ -47,6 +48,7 @@ export default async function MapDashboardPage({ params }: { params: Promise<{ i
       </p>
       <h1>{map.run.topic}</h1>
       <MapTabs id={map.run.id} current="dashboard" />
+      <NextStepCard runId={map.run.id} input={nextInputOf(map)} />
 
       <div className="pm-counters">
         {tiles.map((t) => (

@@ -5,7 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { clampBatchSize, DEFAULT_BATCH_SIZE, MAX_BATCH_SIZE, MIN_BATCH_SIZE } from "@/modules/topical-map/batching";
 import { AppFrame } from "../../chrome";
 import { MapTabs } from "../../map-tabs";
-import { loadMap, suggestFor } from "../load";
+import { NextStepCard } from "../../next-step-card";
+import { loadMap, nextInputOf, suggestFor } from "../load";
 import { progressCounts } from "@/modules/articles/progress";
 import { lightOf } from "@/modules/articles/review";
 import { changeBatch, createAutoBatches, createManualBatch, runBatch, stopBatch } from "./actions";
@@ -23,7 +24,9 @@ const FLASH: Record<string, { text: string; bad: boolean }> = {
   credits: { text: "Not enough credits to write this batch. The credits needed are held when it starts; nothing was spent. Add credits or take some articles out of the batch.", bad: true },
   error: { text: "Something went wrong. Nothing was changed; please try again.", bad: true },
 };
-const PILL: Record<string, string> = { planned: "pm-pill-running", running: "pm-pill-running", completed: "pm-pill-succeeded", canceled: "pm-pill-canceled" };
+const PILL: Record<string, string> = { planned: "", running: "pm-pill-running", completed: "pm-pill-succeeded", canceled: "pm-pill-canceled" };
+const STATUS_TEXT: Record<string, string> = { planned: "ready to write", running: "writing", completed: "done", canceled: "cancelled" };
+const LIGHT_PILL = { green: "pm-pill-succeeded", yellow: "pm-pill-warn", red: "pm-pill-dead" } as const;
 
 function flashOf(code: string | undefined): { text: string; bad: boolean } | undefined {
   if (!code) return undefined;
@@ -73,27 +76,90 @@ export default async function BatchesPage({ params, searchParams }: { params: Pr
       <h1>{map.run.topic}</h1>
       <MapTabs id={map.run.id} current="batches" />
       {flash ? <p className={flash.bad ? "pm-note pm-note-bad" : "pm-note"}>{flash.text}</p> : null}
-      {!finished ? <p className="pm-note pm-note-warn">This map is not finished yet, so batches cannot be made.</p> : null}
-      <p className="pm-muted">
-        A batch is a group of approved articles that will be written together. Making a batch spends no credits and writes nothing yet; it only sets the articles aside. You can cancel it until writing starts.
-      </p>
+      <NextStepCard runId={map.run.id} input={nextInputOf(map)} />
 
-      <section className="pm-section">
-        <h2>Suggested batches</h2>
+      {open.length > 0 ? (
+        <section className="pm-section">
+          <h2>Your batches</h2>
+          {open.map((b) => {
+            const mine = map.items.filter((i) => i.batch_id === b.id);
+            const planned = b.status === "planned";
+            const arts = map.articles.filter((a) => a.batch_id === b.id);
+            const pc = progressCounts(arts.map((a) => a.status));
+            const artOf = new Map(arts.map((a) => [a.plan_item_id, a]));
+            // a finished or running batch lists its articles (some items have left the batch, so show the articles themselves)
+            const rows = planned ? mine.map((i) => ({ id: i.id, keyword: i.keyword, title: i.title, status: i.status })) : arts.map((a) => { const it = map.items.find((x) => x.id === a.plan_item_id); return { id: a.plan_item_id, keyword: it?.keyword ?? "", title: it?.title ?? null, status: a.status }; });
+            return (
+              <form key={b.id} action={changeBatch} className="pm-batchcard">
+                <input type="hidden" name="run" value={map.run.id} />
+                <input type="hidden" name="batch" value={b.id} />
+                <div className="pm-batchcard-head">
+                  <h3>
+                    {b.name} <span className={`pm-pill ${PILL[b.status] ?? ""}`}>{STATUS_TEXT[b.status] ?? b.status}</span>
+                  </h3>
+                  <span className="pm-inline" style={{ gap: "0.5rem" }}>
+                    <span className="pm-muted">
+                      {planned ? `${mine.length} article${mine.length === 1 ? "" : "s"}` : `${pc.ready} ready${pc.open ? ` · ${pc.open} writing` : ""}${pc.failed ? ` · ${pc.failed} failed` : ""}${pc.canceled ? ` · ${pc.canceled} cancelled` : ""}`}
+                      {b.status === "completed" && typeof b.stats.charged === "number" ? ` · ${b.stats.charged} credit${b.stats.charged === 1 ? "" : "s"} charged` : ""}
+                    </span>
+                    {planned ? <button type="submit" formAction={runBatch} className="pm-btn pm-btn-primary pm-btn-sm" disabled={!finished}>Write this batch</button> : null}
+                    {b.status === "running" ? <button type="submit" formAction={stopBatch} className="pm-btn pm-btn-quiet pm-btn-sm">Stop</button> : null}
+                  </span>
+                </div>
+                <details open={!planned}>
+                  <summary>{planned ? "Show the articles / change this batch" : "Show the articles"}</summary>
+                  <div className="pm-tablewrap" style={{ marginTop: "0.5rem" }}>
+                    <table className="pm-table">
+                      <tbody>
+                        {rows.map((i) => {
+                          const a = artOf.get(i.id);
+                          const l = lightOf(a?.qa.verdict);
+                          return (
+                            <tr key={i.id}>
+                              <td>{planned ? <input type="checkbox" name="id" value={i.id} aria-label={`Select ${i.keyword}`} /> : null}</td>
+                              <td>{i.title ?? i.keyword}</td>
+                              <td className="pm-nowrap">
+                                {a?.status === "ready" ? (
+                                  <>
+                                    <span className={`pm-pill ${LIGHT_PILL[l]}`}>{l}</span> <Link href={`/maps/${map.run.id}/articles/${a.id}`}>Read</Link>
+                                  </>
+                                ) : (
+                                  <span className="pm-muted">{planned ? "" : i.status}</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {planned ? (
+                    <div className="pm-inline" style={{ gap: "0.5rem", marginTop: "0.5rem" }}>
+                      <button type="submit" name="intent" value="remove" className="pm-btn pm-btn-ghost pm-btn-sm">Take selected out</button>
+                      <button type="submit" name="intent" value="cancel" className="pm-btn pm-btn-ghost pm-btn-sm">Cancel this batch</button>
+                    </div>
+                  ) : null}
+                </details>
+              </form>
+            );
+          })}
+        </section>
+      ) : null}
+
+      <details className="pm-more">
+        <summary>More options: batch size, your own batch</summary>
+
+        <h3>Suggested batches</h3>
         <form method="get" className="pm-inline" style={{ gap: "0.5rem" }}>
           <label>
             Articles per batch{" "}
             <input className="pm-input pm-input-sm" type="number" name="size" min={MIN_BATCH_SIZE} max={MAX_BATCH_SIZE} defaultValue={size} style={{ width: "5rem" }} />
           </label>
           <button type="submit" className="pm-btn pm-btn-ghost pm-btn-sm">Update</button>
-          <span className="pm-muted">
-            {MIN_BATCH_SIZE}–{MAX_BATCH_SIZE}; the default is {DEFAULT_BATCH_SIZE}. The main article of a group comes first, then the higher priority.
-          </span>
+          <span className="pm-muted">{MIN_BATCH_SIZE}–{MAX_BATCH_SIZE}, default {DEFAULT_BATCH_SIZE}</span>
         </form>
         {suggestions.length === 0 ? (
-          <p className="pm-muted" style={{ marginTop: "0.75rem" }}>
-            Nothing to suggest: no approved article is waiting. <Link href={`/maps/${map.run.id}`}>Approve articles on the Review tab</Link>.
-          </p>
+          <p className="pm-muted" style={{ marginTop: "0.75rem" }}>No approved article is waiting for a batch.</p>
         ) : (
           <>
             <div className="pm-tablewrap" style={{ marginTop: "0.75rem" }}>
@@ -113,10 +179,7 @@ export default async function BatchesPage({ params, searchParams }: { params: Pr
                           {b.pillarPending ? <div className="pm-muted">its main article is not approved yet</div> : null}
                         </td>
                         <td className="pm-num">{b.itemIds.length}</td>
-                        <td>
-                          {b.hasPillar ? <strong>{first?.keyword}</strong> : first?.keyword}
-                          {b.hasPillar ? <span className="pm-muted"> (main article)</span> : null}
-                        </td>
+                        <td>{b.hasPillar ? <strong>{first?.keyword}</strong> : first?.keyword}{b.hasPillar ? <span className="pm-muted"> (main article)</span> : null}</td>
                         <td className="pm-nowrap">
                           {canNext ? (
                             <form action={createAutoBatches}>
@@ -136,28 +199,25 @@ export default async function BatchesPage({ params, searchParams }: { params: Pr
             <form action={createAutoBatches} style={{ marginTop: "0.75rem" }}>
               <input type="hidden" name="run" value={map.run.id} />
               <input type="hidden" name="size" value={size} />
-              <button type="submit" name="intent" value="all" className="pm-btn pm-btn-brand" disabled={!finished}>
-                Create all {suggestions.length} suggested batch{suggestions.length === 1 ? "" : "es"}
+              <button type="submit" name="intent" value="all" className="pm-btn pm-btn-quiet pm-btn-sm" disabled={!finished}>
+                Create all {suggestions.length} suggested batch{suggestions.length === 1 ? "" : "es"} at this size
               </button>
             </form>
           </>
         )}
-      </section>
 
-      <section className="pm-section">
-        <h2>Your own batch</h2>
+        <h3 style={{ marginTop: "1.5rem" }}>Your own batch</h3>
         {free.length === 0 ? (
-          <p className="pm-muted">No approved article is free. Cancel a batch or approve more articles first.</p>
+          <p className="pm-muted">No approved article is free.</p>
         ) : (
           <form action={createManualBatch}>
             <input type="hidden" name="run" value={map.run.id} />
             <div className="pm-inline" style={{ gap: "0.5rem", marginBottom: "0.5rem" }}>
               <label>
-                Name{" "}
-                <input className="pm-input pm-input-sm" name="name" maxLength={120} required placeholder="e.g. Summer ideas" />
+                Name <input className="pm-input pm-input-sm" name="name" maxLength={120} required placeholder="e.g. Summer ideas" />
               </label>
-              <button type="submit" className="pm-btn pm-btn-ghost pm-btn-sm" disabled={!finished}>Create batch from selected</button>
-              <span className="pm-muted">Pick 1–100 articles; they may come from different groups.</span>
+              <button type="submit" className="pm-btn pm-btn-quiet pm-btn-sm" disabled={!finished}>Create batch from selected</button>
+              <span className="pm-muted">Tick 1–100 articles below.</span>
             </div>
             <div className="pm-tablewrap">
               <table className="pm-table">
@@ -178,80 +238,8 @@ export default async function BatchesPage({ params, searchParams }: { params: Pr
             </div>
           </form>
         )}
-      </section>
-
-      <section className="pm-section">
-        <h2>Batches</h2>
-        {open.length === 0 ? <p className="pm-muted">No batch yet.</p> : null}
-        {open.map((b) => {
-          const mine = map.items.filter((i) => i.batch_id === b.id);
-          const planned = b.status === "planned";
-          const arts = map.articles.filter((a) => a.batch_id === b.id);
-          const pc = progressCounts(arts.map((a) => a.status));
-          const artOf = new Map(arts.map((a) => [a.plan_item_id, a]));
-          return (
-            <form key={b.id} action={changeBatch} style={{ marginTop: "1rem" }}>
-              <input type="hidden" name="run" value={map.run.id} />
-              <input type="hidden" name="batch" value={b.id} />
-              <h3>
-                {b.name} <span className={`pm-pill ${PILL[b.status] ?? ""}`}>{b.status}</span>{" "}
-                <span className="pm-muted">
-                  {mine.length} article{mine.length === 1 ? "" : "s"} · {b.origin === "auto" ? "suggested" : "your own"}
-                  {b.silo_id ? ` · ${siloName.get(b.silo_id) ?? ""}` : " · mixed groups"}
-                </span>
-              </h3>
-              <div className="pm-tablewrap">
-                <table className="pm-table">
-                  <tbody>
-                    {mine.map((i) => (
-                      <tr key={i.id}>
-                        <td>{planned ? <input type="checkbox" name="id" value={i.id} aria-label={`Select ${i.keyword}`} /> : null}</td>
-                        <td>{i.keyword}</td>
-                        <td>{i.title ?? ""}</td>
-                        <td>
-                          <span className="pm-pill pm-pill-running">{i.status}</span>
-                          {artOf.get(i.id)?.status === "ready" ? <> <span className={`pm-pill ${{ green: "pm-pill-succeeded", yellow: "pm-pill-running", red: "pm-pill-dead" }[lightOf(artOf.get(i.id)?.qa.verdict)]}`}>{lightOf(artOf.get(i.id)?.qa.verdict)}</span> <Link href={`/maps/${map.run.id}/articles/${artOf.get(i.id)?.id}`}>Read</Link></> : null}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {planned ? (
-                <div className="pm-inline" style={{ gap: "0.5rem", marginTop: "0.5rem" }}>
-                  <button type="submit" formAction={runBatch} className="pm-btn pm-btn-brand pm-btn-sm" disabled={!finished}>Write this batch</button>
-                  <button type="submit" name="intent" value="remove" className="pm-btn pm-btn-ghost pm-btn-sm">Take selected out</button>
-                  <button type="submit" name="intent" value="cancel" className="pm-btn pm-btn-quiet pm-btn-sm">Cancel this batch</button>
-                  <span className="pm-muted">Writing holds the credits first and charges only for articles that come out ready.</span>
-                </div>
-              ) : null}
-              {arts.length > 0 ? (
-                <div style={{ marginTop: "0.5rem" }}>
-                  <p className="pm-muted">
-                    {pc.ready} ready · {pc.open} in progress · {pc.failed} failed · {pc.canceled} cancelled
-                    {b.status === "completed" && typeof b.stats.charged === "number" ? ` · charged ${b.stats.charged} credit${b.stats.charged === 1 ? "" : "s"}` : ""}
-                    {b.status === "running" ? ` · ${b.credit_amount} credit${b.credit_amount === 1 ? "" : "s"} held` : ""}
-                  </p>
-                  {b.status === "running" ? (
-                    <button type="submit" formAction={stopBatch} className="pm-btn pm-btn-quiet pm-btn-sm">Stop writing</button>
-                  ) : null}
-                </div>
-              ) : null}
-            </form>
-          );
-        })}
-        {canceled.length > 0 ? (
-          <details style={{ marginTop: "1rem" }}>
-            <summary className="pm-muted">{canceled.length} cancelled batch{canceled.length === 1 ? "" : "es"}</summary>
-            <ul>
-              {canceled.map((b) => (
-                <li key={b.id}>{b.name}</li>
-              ))}
-            </ul>
-          </details>
-        ) : null}
-        <p className="pm-muted">The price of writing an article is set by the PinMentor team. If it is not set yet, writing cannot start.</p>
-      </section>
+        {canceled.length > 0 ? <p className="pm-muted" style={{ marginTop: "1rem" }}>{canceled.length} cancelled batch{canceled.length === 1 ? "" : "es"}: {canceled.map((b) => b.name).join(", ")}</p> : null}
+      </details>
     </AppFrame>
   );
 }
