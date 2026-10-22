@@ -12,6 +12,7 @@ import { LlmError } from "@/modules/llm/errors";
 import type { ProviderName } from "@/modules/llm/errors";
 import { mergeReview, reviewPrompt, reviewSchema, reviewText, type StoredReview } from "./review";
 import * as G from "./gloss";
+import { buildLinks, buildSchema, metaDescription, publishChecks, withPublishChecks, type LinkTarget, type RelatedLink } from "./publish";
 
 /**
  * Article writer v1 (Type A). (Batch 13: assemble no longer finishes the article; a review job does, see below.) Three kinds of short, idempotent jobs, all keyed by article id:
@@ -92,7 +93,7 @@ const outlineJob: JobHandler = guarded(async (ctx) => {
   if (!done.success) {
     const p = outlinePrompt({ keyword: l.art.keyword, variants: l.item.variants, title: l.item.title, n, locale: l.art.locale, silo: l.silo });
     const r = await callLlm({ task: "research_outline", workspaceId: ctx.workspaceId, jobId: ctx.jobId, system: p.system, prompt: p.prompt, schema: outlineSchema(n), maxOutputTokens: 6000, temperature: 0.4 });
-    const stored: StoredOutline = { n, highlights: r.data.highlights, intro_angle: r.data.intro_angle, items: r.data.items, faq: r.data.faq, conclusion_angle: r.data.conclusion_angle };
+    const stored: StoredOutline = { n, highlights: r.data.highlights, intro_angle: r.data.intro_angle, items: r.data.items, faq: r.data.faq, conclusion_angle: r.data.conclusion_angle, meta_description: r.data.meta_description };
     const up = await db().from("articles").update({ status: "writing", title: l.item.title, slug: l.item.slug, outline: stored }).eq("id", articleId).in("status", ["queued", "writing"]);
     if (up.error) throw new JobError("outline save failed", "db_error", { retryable: true });
   }
@@ -195,6 +196,24 @@ function partsOf(l: Loaded, o: StoredOutline, s: Sections): ArticleParts | null 
   return { title: l.item.title ?? l.art.keyword, locale: l.art.locale, highlights: o.highlights, intro, items: items as ItemContent[], faq, conclusion };
 }
 
+const linkPlanSchema = z.object({ pillar: uuid.nullable().catch(null), siblings: z.array(uuid).catch([]), children: z.array(uuid).catch([]), anchors: z.array(z.string()).catch([]) });
+
+/** Planned internal links of this article's plan item. Never fails the article: on any problem the list is empty (QA flags it). */
+async function plannedLinks(planItemId: string): Promise<RelatedLink[]> {
+  try {
+    const own = await db().from("plan_items").select("link_plan").eq("id", planItemId).maybeSingle();
+    const plan = linkPlanSchema.safeParse(own.data?.link_plan);
+    if (own.error || !plan.success) return [];
+    const ids = [plan.data.pillar, ...plan.data.siblings, ...plan.data.children].filter((x): x is string => !!x);
+    if (ids.length === 0) return [];
+    const t = await db().from("plan_items").select("id, title, slug, status").in("id", ids);
+    if (t.error) return [];
+    return buildLinks(plan.data, planItemId, (t.data ?? []) as LinkTarget[]);
+  } catch {
+    return [];
+  }
+}
+
 /** Renders and runs the mechanical QA, stores them (the article stays `writing`) and hands over to the language review. */
 const assembleJob: JobHandler = guarded(async (ctx) => {
   const { articleId } = parsePayload(articlePayload, ctx.payload);
@@ -205,9 +224,12 @@ const assembleJob: JobHandler = guarded(async (ctx) => {
   if (!parts) throw new JobError("sections incomplete", "sections_incomplete", { retryable: true, retryAfterSeconds: 5 });
 
   const html = renderArticle(parts);
-  const qa = qaArticle(parts, l.item.slug, o.n, l.item.target_words);
+  const meta = metaDescription(o.meta_description, parts.intro.paragraphs);
+  const schema = buildSchema(parts, meta);
+  const links = await plannedLinks(l.art.plan_item_id);
+  const qa = withPublishChecks(qaArticle(parts, l.item.slug, o.n, l.item.target_words), publishChecks(meta, schema, links, parts.locale));
   const words = countWords(plainText(parts));
-  const up = await db().from("articles").update({ title: parts.title, slug: l.item.slug, body_html: html, word_count: words, qa, stats: { qa_verdict: qa.verdict, items: o.n } }).eq("id", articleId).in("status", ["queued", "writing"]);
+  const up = await db().from("articles").update({ title: parts.title, slug: l.item.slug, body_html: html, word_count: words, qa, meta_description: meta, schema_json: schema, links, stats: { qa_verdict: qa.verdict, items: o.n } }).eq("id", articleId).in("status", ["queued", "writing"]);
   if (up.error) throw new JobError("assemble save failed", "db_error", { retryable: true });
   await enqueue(ctx, "article.review", { articleId }, `article:${articleId}:review`, { stage: "review" });
   return { words, qa: qa.verdict };

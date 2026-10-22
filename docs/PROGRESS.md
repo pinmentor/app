@@ -344,6 +344,21 @@
 2. Vercel ডিপ্লয়ের পর ম্যাপ খুলে তিন পেজের ওপরে "পরের ধাপ" কার্ড দেখো; কার্ডের বোতাম দিয়েই পুরো প্রবাহ চালিয়ে দেখো (Review-তে approve → "Create N batches" → "Write this batch" → লেখা শেষে "Open …"); তারপর আর্টিকেলের তিন ট্যাব।
 3. যেখানে এখনো ঘোলাটে লাগে সেই পেজের স্ক্রিনশট পাঠাও।
 
+## Batch 15 — পাবলিশ-রেডি প্যাকেজ: মেটা-ডেসক্রিপশন, schema.org JSON-LD, পরিকল্পিত ইন্টারনাল লিংক
+
+- `0020_article_publish_data.sql`: `articles`-এ `meta_description` (≤৪০০), `schema_json jsonb`, `links jsonb default []`। নতুন ফাংশন নেই; assemble জব সার্ভিস-রোলে লেখে, `article_finish` অপরিবর্তিত। `rls_0020.sql` ৬/৬ (সাধারণ ও এক-ট্রানজেকশন দুই মোডেই)।
+- `src/modules/articles/publish.ts`: `metaDescription` (মডেলের প্রস্তাব ≥৭০ অক্ষর হলে সেটা, নইলে ইন্ট্রোর শুরু; ≤১৫৫, শব্দের সীমায় কাটা), `buildSchema` (Article + ItemList + FAQPage, `inLanguage`), `buildLinks` (`link_plan` থেকে pillar→siblings→children; নিজে, rejected, শিরোনামহীন, ডুপ্লিকেট বাদ), `publishChecks`/`withPublishChecks` (QA-তে `meta`, `schema`, `links`)।
+- আউটলাইনের একই LLM কলে `meta_description` চায় (বাড়তি কল নেই; না এলে ফলব্যাক)। assemble এগুলো সংরক্ষণ করে; লিংক খুঁজতে সমস্যা হলে আর্টিকেল ফেল হয় না, তালিকা ফাঁকা + হলুদ ফ্ল্যাগ।
+- **ইচ্ছাকৃত সিদ্ধান্ত:** লিংক HTML-এ ঢোকানো হয়নি। যে লেখা এখনো পাবলিশ হয়নি তার লিংক ভাঙা লিংক; পাবলিশার (পরের ব্যাচ) শুধু সত্যিই লাইভ আর্টিকেলের লিংক বসাবে। BreadcrumbList সাইট-URL জানা পর্যন্ত স্থগিত।
+- আর্টিকেল-পেজ, Checks ট্যাব: ভাঁজ "Publishing data" (মেটা, স্কিমার ধরন, লিংক-তালিকা)।
+- যাচাই: ইউনিট ১৮/১৮ (articles), review ১৪/১৪, next-step ৯/৯; SQL 0001–0020 সব সবুজ (`rls_0010` লোকাল ৩২/৩৭ আগের মতোই, স্টাবজনিত); tsc পরিষ্কার (শুধু স্টাব-অভিযোগ)। **যাচাই হয়নি:** আসল LLM-এ নতুন `meta_description` প্রম্পট; জব-হ্যান্ডলারের ইন্টিগ্রেশন টেস্ট; আসল ব্রাউজারে ভাঁজ। নোট: tsc-তে `noUncheckedIndexedAccess` ধরা পড়েছিল ও ঠিক করা হয়েছে (CI-র "CL" এরর এমন কিছু হতে পারে, তবে লগ না দেখে নিশ্চিত নই)।
+
+### মালিকের করণীয় (Batch 15), ক্রমানুসারে
+1. জিপ আনজিপ করে ফাইলগুলো রিপোতে আপলোড (ফোল্ডার-কাঠামো একই)।
+2. Supabase SQL Editor-এ `0020_article_publish_data.sql` চালাও, তারপর `rls_0020.sql` — শেষ সারি `ALL CHECKS | 6 of 6 passed | true` হওয়া চাই।
+3. Vercel ডেপ্লয় হলে একটি নতুন আর্টিকেল লেখাও; Checks ট্যাবে "Publishing data" ভাঁজ খুলে দেখো: মেটা ~১১০–১৫০ অক্ষর কি না, লিংক-তালিকা মানচিত্রের সাথে মেলে কি না।
+4. GitHub Actions-এর ব্যর্থ ধাপের শেষ ২০–৩০ লাইন পাঠাও (CI এরর এখনো অজানা)।
+
 ## আসল রানের মাপা সংখ্যা (২০২৬-১০-২০) ও স্থগিত তালিকা
 **রান:** peinados, Auto, সীমা ৩০; মোট ৩৪৯ সেকেন্ড; kept 30, natural 204, trimmed 174; facets 10, values_total 148, expansion_calls 6, values_explored 5.
 **ধাপের সময় (সেকেন্ড):** S1+অপেক্ষা ≈ ৬৩ (টাইমলাইনে নেই: মোট − যোগফল), s2_expand 41, s3_normalize 0, s3_embed 22, s4_pairs 39, **s4_judge 121**, s5_classify 21, s6_silos 3, s7_titles 35, s8_links 1, s9_verify 3.

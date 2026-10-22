@@ -94,3 +94,49 @@ describe("qa", () => {
     expect(englishShare("the and with")).toBe(1);
   });
 });
+
+import { buildLinks, buildSchema, cutAtWord, metaDescription, publishChecks, withPublishChecks } from "./publish";
+
+describe("publish data", () => {
+  it("meta description: uses a good suggestion, else the intro, never over 155 and cut at a word", () => {
+    const good = "Descubre ideas de peinados fáciles para el trabajo que se hacen en pocos minutos y sin herramientas.";
+    expect(metaDescription(good, ["x"])).toBe(good);
+    const fromIntro = metaDescription("corto", ["Un peinado sencillo cambia tu mañana y te ahorra tiempo cada día. ".repeat(6)]);
+    expect(fromIntro.length <= 155).toBe(true);
+    expect(fromIntro.endsWith(" ")).toBe(false);
+    expect(cutAtWord("uno dos tres cuatro", 9)).toBe("uno dos");
+    expect(metaDescription('Dice "hola"  mundo '.repeat(10), []).includes('"')).toBe(false);
+  });
+  it("schema: Article + ItemList + FAQPage with the language, and it survives JSON", () => {
+    const s = buildSchema(parts(), "Meta");
+    expect(s.map((n) => n["@type"]).join(",")).toBe("Article,ItemList,FAQPage");
+    expect(s[0]?.["inLanguage"]).toBe("es-MX");
+    expect((s[1]?.["itemListElement"] as unknown[]).length).toBe(2);
+    expect(JSON.stringify(s).includes("acceptedAnswer")).toBe(true);
+    expect(buildSchema(parts({ faq: { items: [] } }), "M").length).toBe(2);
+  });
+  it("links: pillar, siblings, children in order; drops self, rejected, untitled, duplicates, unknown", () => {
+    const t = (id: string, status = "approved", title: string | null = `T${id}`) => ({ id, title, slug: `s-${id}`, status });
+    const plan = { pillar: "p", siblings: ["a", "me", "r", "n", "a"], children: ["c", "zz", "p"], anchors: [] };
+    const out = buildLinks(plan, "me", [t("p"), t("a"), t("me"), t("r", "rejected"), t("n", "approved", null), t("c")]);
+    expect(out.map((l) => `${l.role}:${l.plan_item_id}`).join(",")).toBe("pillar:p,sibling:a,child:c");
+    expect(buildLinks(null, "me", []).length).toBe(0);
+  });
+  it("checks: meta length, schema, links; verdict recomputed and re-running replaces them", () => {
+    const base = qaArticle(parts(), "peinados", 2, 600);
+    const ok = publishChecks("x".repeat(100), buildSchema(parts(), "m"), [{ plan_item_id: "a", role: "pillar", title: "t", slug: "s" }], "es-MX");
+    expect(ok.map((c) => c.status).join(",")).toBe("pass,pass,pass");
+    const bad = publishChecks("short", [{ "@type": "Article" }], [], "es-MX");
+    expect(bad.map((c) => c.status).join(",")).toBe("flag,fail,flag");
+    const r1 = withPublishChecks(base, bad);
+    expect(r1.verdict).toBe("fail");
+    const r2 = withPublishChecks(r1, ok);
+    expect(r2.checks.filter((c) => c.id === "meta").length).toBe(1);
+    expect(r2.checks.some((c) => c.id === "schema" && c.status === "pass")).toBe(true);
+  });
+  it("outline accepts a meta description and works without one", () => {
+    const o = { highlights: ["a b", "c d"], intro_angle: "x", items: [{ heading: "Uno", angle: "a" }, { heading: "Dos", angle: "b" }], faq: [{ question: "¿Qué es esto?" }, { question: "¿Cómo se usa?" }], conclusion_angle: "z" };
+    expect(outlineSchema(2).safeParse({ ...o, meta_description: "Una descripción" }).success).toBe(true);
+    expect(outlineSchema(2).safeParse(o).success).toBe(true);
+  });
+});

@@ -15,6 +15,7 @@ const rowSchema = z.object({
   body_html: z.string().nullable(), word_count: z.number().nullable(), last_error: z.string().nullable(),
   qa: z.object({ verdict: z.string().optional(), checks: z.array(z.object({ id: z.string(), status: z.string(), summary: z.string() })).optional() }).passthrough(),
   review: z.unknown(), outline: z.object({ n: z.number() }).passthrough(),
+  meta_description: z.string().nullable(), schema_json: z.unknown(), links: z.array(z.object({ role: z.string(), title: z.string(), slug: z.string() })).catch([]),
 });
 const sectionRow = z.object({ kind: z.string(), idx: z.number(), content: z.unknown() });
 
@@ -59,7 +60,7 @@ export default async function ArticlePage({ params, searchParams }: { params: Pr
   // through the user's session: another workspace's article is simply not found (RLS)
   const res = await supabase
     .from("articles")
-    .select("id, map_run_id, status, title, slug, keyword, body_html, word_count, last_error, qa, review, outline")
+    .select("id, map_run_id, status, title, slug, keyword, body_html, word_count, last_error, qa, review, outline, meta_description, schema_json, links")
     .eq("id", ids.data.articleId)
     .eq("map_run_id", ids.data.id)
     .maybeSingle();
@@ -211,6 +212,14 @@ export default async function ArticlePage({ params, searchParams }: { params: Pr
                   </ul>
                 </details>
               ) : null}
+              <details className="pm-more">
+                <summary>Publishing data (meta description, schema, links)</summary>
+                <p><strong>Meta description</strong> ({(art.meta_description ?? "").length} characters)<br />{art.meta_description ?? "Not created."}</p>
+                <p><strong>Schema</strong>: {Array.isArray(art.schema_json) ? (art.schema_json as { "@type"?: string }[]).map((n) => n["@type"]).join(", ") : "Not created."}</p>
+                <p><strong>Planned internal links</strong>{art.links.length === 0 ? ": none." : ":"}</p>
+                {art.links.length > 0 ? <ul className="pm-checks">{art.links.map((l) => <li key={l.slug}><span className="pm-pill">{l.role}</span> {l.title} <span className="pm-muted">/{l.slug}/</span></li>)}</ul> : null}
+                <p className="pm-muted">Links go in when the article is published, and only to articles that are live.</p>
+              </details>
               <p className="pm-muted" style={{ marginTop: "1rem" }}>
                 {rv ? `Language read by ${rv.model ?? "a second model"}${rv.cross_model === false ? " (the same company that wrote it, so a weaker check)" : ""}. ` : ""}
                 These checks lower the risk; they do not prove the text is right. Read the translation before you use the article.

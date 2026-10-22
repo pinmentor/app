@@ -43,7 +43,7 @@ export function outlinePrompt(i: OutlineInput): { system: string; prompt: string
   return {
     system:
       `You plan a blog article (ideas / list type) in ${LANG[i.locale]}. ${RULES} ` +
-      `Return one JSON object only: {"highlights":["", ...3 to 5 short bullet points a reader gets from this article],"intro_angle":"one sentence: how the introduction hooks the reader","items":[{"heading":"","angle":"one sentence: what makes this idea distinct"}],"faq":[{"question":""}, ...3 to 5 real reader questions],"conclusion_angle":"one sentence"}. ` +
+      `Return one JSON object only: {"highlights":["", ...3 to 5 short bullet points a reader gets from this article],"intro_angle":"one sentence: how the introduction hooks the reader","items":[{"heading":"","angle":"one sentence: what makes this idea distinct"}],"faq":[{"question":""}, ...3 to 5 real reader questions],"conclusion_angle":"one sentence","meta_description":"the search-result description: ONE plain sentence of 110 to 150 characters that says what the reader gets, no quotes, no list numbers"}. ` +
       `"items" has EXACTLY ${i.n} entries, all different from each other (no near-duplicates), ordered for a reader, each heading a short specific name (max 70 characters) without the number in front. ` +
       `Cover the meaning of the main keyword and of its variants naturally; do not stuff them.`,
     prompt: `Title: ${i.title}\nMain keyword: ${i.keyword}\nVariants (same meaning): ${i.variants.length ? i.variants.join("; ") : "none"}\n${i.silo ? `Topic group: ${i.silo}\n` : ""}Number of list items: ${i.n}`,
@@ -52,7 +52,7 @@ export function outlinePrompt(i: OutlineInput): { system: string; prompt: string
 
 export function outlineSchema(n: number) {
   return withKeys(
-    ["highlights", "intro_angle", "items", "faq", "conclusion_angle"],
+    ["highlights", "intro_angle", "items", "faq", "conclusion_angle", "meta_description"],
     z.object({
       highlights: z.array(z.unknown()).transform((xs) => xs.flatMap((x) => (typeof x === "string" && x.trim() ? [x.trim().slice(0, 160)] : []))).refine((a) => a.length >= 2, { message: "highlights" }).transform((a) => a.slice(0, 6)),
       intro_angle: text(300),
@@ -64,6 +64,7 @@ export function outlineSchema(n: number) {
         .refine((a) => a.length >= 2, { message: "faq" })
         .transform((a) => a.slice(0, 5)),
       conclusion_angle: text(300),
+      meta_description: text(220),
     }),
   );
 }
@@ -77,6 +78,7 @@ export const storedOutlineSchema = z.object({
   items: z.array(z.object({ heading: z.string(), angle: z.string() })),
   faq: z.array(z.object({ question: z.string() })),
   conclusion_angle: z.string(),
+  meta_description: z.string().optional(),
 });
 export type StoredOutline = z.infer<typeof storedOutlineSchema>;
 
