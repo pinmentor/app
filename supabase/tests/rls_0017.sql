@@ -44,7 +44,7 @@ insert into t_results (who, test, actual, expected) values
   ('B', 'set then replace: one row, new value, note cleared, updated_by = B',
      (select count(*)::text || '/' || max(credits) || '/' || coalesce(max(note), 'null') || '/' || (max(updated_by::text) = 'b1710101-0000-0000-0000-000000000002')::text from public.credit_rates where action = 'zz_test_rate'), '1/9/null/true'),
   ('B', 'two audit rows: first before=null after=7 with the trimmed note and ip; second before=7 after=9',
-     (select string_agg(coalesce(diff ->> 'before', 'null') || '>' || (diff ->> 'after') || ':' || coalesce(diff ->> 'note', '-') || ':' || coalesce(ip, '-'), ' | ' order by at, id)
+     (select string_agg(coalesce(diff ->> 'before', 'null') || '>' || (diff ->> 'after') || ':' || coalesce(diff ->> 'note', '-') || ':' || coalesce(ip, '-'), ' | ' order by (diff ->> 'after')::numeric)
         from public.admin_audit where target_type = 'credit_rate' and target_id = 'zz_test_rate' and admin_id = 'b1710101-0000-0000-0000-000000000002'),
      'null>7:first guess:1.2.3.4 | 7>9:-:-');
 

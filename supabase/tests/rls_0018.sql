@@ -82,13 +82,15 @@ create function pg_temp.kids(s text) returns text language sql as $$
 grant execute on function pg_temp.siz(text), pg_temp.kids(text) to anon, authenticated, service_role;
 
 
+-- NOTE: Supabase runs the whole file as ONE transaction, so now() / created_at are identical for every row. Tests must never pick
+-- "the newest row" by time: art() picks the article of the LATEST BATCH of the item (batches.position grows with every batch).
 -- the owner's real article price (if any) is parked while the test runs and put back at the end
 create temp table t_rate_snap as select * from public.credit_rates where action = 'article_write';
 delete from public.credit_rates where action = 'article_write';
 create temp table t_calls (k text primary key, v text);
 grant all on t_calls to anon, authenticated, service_role;
 create function pg_temp.b(k text) returns uuid language sql as $$ select v::uuid from t_calls where k = $1 $$;
-create function pg_temp.art(k text) returns uuid language sql as $$ select id from public.articles where plan_item_id = pg_temp.j($1) order by created_at desc, id limit 1 $$;
+create function pg_temp.art(k text) returns uuid language sql as $$ select a.id from public.articles a join public.batches b on b.id = a.batch_id where a.plan_item_id = pg_temp.j($1) order by b.position desc, a.id limit 1 $$;
 create function pg_temp.ist(k text) returns text language sql as $$ select status || ':' || (batch_id is not null)::text from public.plan_items where id = pg_temp.j($1) $$;
 create function pg_temp.bal() returns text language sql as $$ select available || '/' || held from public.credit_balance(pg_temp.wsa()) $$;
 create function pg_temp.led(s text) returns text language sql as $$ select count(*)::text from public.credit_ledger where workspace_id = pg_temp.wsa() and reason = 'batch_run' and status = $1 $$;
