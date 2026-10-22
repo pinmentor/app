@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { parseAutoForm, parseBatchAction, parseManualForm } from "@/modules/topical-map/batching";
+import { runFlash } from "@/modules/articles/progress";
 import { loadMap, suggestFor } from "../load";
 
 /**
@@ -96,4 +97,45 @@ export async function changeBatch(formData: FormData) {
     redirect(`/maps/${form.run}/batches?flash=${flashFor(res.error)}`);
   }
   redirect(`/maps/${form.run}/batches?flash=${form.intent === "cancel" ? "canceled" : "removed"}-${typeof res.data === "number" ? res.data : 0}`);
+}
+
+const UUID = /^[0-9a-f-]{36}$/i;
+/** run + batch ids from a run/stop form, or a redirect back when they are not ids. */
+function runIds(fd: FormData): { run: string; batch: string } {
+  const run = String(fd.get("run") ?? "");
+  const batch = String(fd.get("batch") ?? "");
+  if (!UUID.test(run)) redirect("/maps");
+  if (!UUID.test(batch)) redirect(`/maps/${run}/batches?flash=pick`);
+  return { run, batch };
+}
+
+/**
+ * Start writing a planned batch: the SQL (0018) checks membership, state, Type A + title, that a price is set (PM005),
+ * and holds price x articles from the credit balance (PM001 when it is not enough). The price is read there, never here.
+ */
+export async function runBatch(formData: FormData) {
+  const { run, batch } = runIds(formData);
+  const { user } = await authed(run);
+  const res = await createAdminClient().rpc("batch_run_start", { p_user: user.id, p_batch: batch });
+  revalidatePath(`/maps/${run}/batches`);
+  revalidatePath(`/maps/${run}/dashboard`);
+  if (res.error) {
+    console.error("batch run failed", res.error.code ?? "no_code");
+    redirect(`/maps/${run}/batches?flash=${runFlash(res.error.code)}`);
+  }
+  redirect(`/maps/${run}/batches?flash=started-${typeof res.data === "number" ? res.data : 0}`);
+}
+
+/** Stop a running batch: unfinished articles are cancelled (free, their items are approved again); finished ones stay and are charged. */
+export async function stopBatch(formData: FormData) {
+  const { run, batch } = runIds(formData);
+  const { user } = await authed(run);
+  const res = await createAdminClient().rpc("batch_run_cancel", { p_user: user.id, p_batch: batch });
+  revalidatePath(`/maps/${run}/batches`);
+  revalidatePath(`/maps/${run}/dashboard`);
+  if (res.error) {
+    console.error("batch stop failed", res.error.code ?? "no_code");
+    redirect(`/maps/${run}/batches?flash=${runFlash(res.error.code)}`);
+  }
+  redirect(`/maps/${run}/batches?flash=stopped-${typeof res.data === "number" ? res.data : 0}`);
 }

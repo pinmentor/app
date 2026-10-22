@@ -25,3 +25,8 @@ export function canEnqueueTestJobs(role: AdminRole): boolean {
 export function canManageSecrets(role: AdminRole): boolean {
   return role === "superadmin";
 }
+
+/** Set or remove credit prices (credit_rates): superadmin only, every change is audited. */
+export function canManageRates(role: AdminRole): boolean {
+  return role === "superadmin";
+}

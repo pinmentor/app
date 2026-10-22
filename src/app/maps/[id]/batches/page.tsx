@@ -6,7 +6,8 @@ import { clampBatchSize, DEFAULT_BATCH_SIZE, MAX_BATCH_SIZE, MIN_BATCH_SIZE } fr
 import { AppFrame } from "../../chrome";
 import { MapTabs } from "../../map-tabs";
 import { loadMap, suggestFor } from "../load";
-import { changeBatch, createAutoBatches, createManualBatch } from "./actions";
+import { progressCounts } from "@/modules/articles/progress";
+import { changeBatch, createAutoBatches, createManualBatch, runBatch, stopBatch } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Batches — PinMentor" };
@@ -17,6 +18,8 @@ const FLASH: Record<string, { text: string; bad: boolean }> = {
   forbidden: { text: "You cannot change this map.", bad: true },
   pick: { text: "Not changed: give the batch a name and pick between 1 and 100 articles.", bad: true },
   nothing: { text: "No approved article is waiting for a batch. Approve articles on the Review tab first.", bad: true },
+  norate: { text: "Writing cannot start yet: the price for writing an article has not been set. It is set by the PinMentor team; nothing was spent.", bad: true },
+  credits: { text: "Not enough credits to write this batch. The credits needed are held when it starts; nothing was spent. Add credits or take some articles out of the batch.", bad: true },
   error: { text: "Something went wrong. Nothing was changed; please try again.", bad: true },
 };
 const PILL: Record<string, string> = { planned: "pm-pill-running", running: "pm-pill-running", completed: "pm-pill-succeeded", canceled: "pm-pill-canceled" };
@@ -24,6 +27,11 @@ const PILL: Record<string, string> = { planned: "pm-pill-running", running: "pm-
 function flashOf(code: string | undefined): { text: string; bad: boolean } | undefined {
   if (!code) return undefined;
   if (FLASH[code]) return FLASH[code];
+  const run = /^(started|stopped)-(\d+)$/.exec(code);
+  if (run) {
+    const k = Number(run[2]);
+    return { text: run[1] === "started" ? `Writing started for ${k} article${k === 1 ? "" : "s"}. Refresh this page to see progress; you can leave and come back.` : `Writing stopped. ${k} unfinished article${k === 1 ? " was" : "s were"} cancelled and approved again; finished articles are kept.`, bad: false };
+  }
   const m = /^(created|canceled|removed)-(\d+)$/.exec(code);
   if (!m) return undefined;
   const n = Number(m[2]);
@@ -177,6 +185,9 @@ export default async function BatchesPage({ params, searchParams }: { params: Pr
         {open.map((b) => {
           const mine = map.items.filter((i) => i.batch_id === b.id);
           const planned = b.status === "planned";
+          const arts = map.articles.filter((a) => a.batch_id === b.id);
+          const pc = progressCounts(arts.map((a) => a.status));
+          const artOf = new Map(arts.map((a) => [a.plan_item_id, a]));
           return (
             <form key={b.id} action={changeBatch} style={{ marginTop: "1rem" }}>
               <input type="hidden" name="run" value={map.run.id} />
@@ -196,7 +207,10 @@ export default async function BatchesPage({ params, searchParams }: { params: Pr
                         <td>{planned ? <input type="checkbox" name="id" value={i.id} aria-label={`Select ${i.keyword}`} /> : null}</td>
                         <td>{i.keyword}</td>
                         <td>{i.title ?? ""}</td>
-                        <td><span className="pm-pill pm-pill-running">{i.status}</span></td>
+                        <td>
+                          <span className="pm-pill pm-pill-running">{i.status}</span>
+                          {artOf.get(i.id)?.status === "ready" ? <> <Link href={`/maps/${map.run.id}/articles/${artOf.get(i.id)?.id}`}>Read</Link></> : null}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -204,9 +218,22 @@ export default async function BatchesPage({ params, searchParams }: { params: Pr
               </div>
               {planned ? (
                 <div className="pm-inline" style={{ gap: "0.5rem", marginTop: "0.5rem" }}>
+                  <button type="submit" formAction={runBatch} className="pm-btn pm-btn-brand pm-btn-sm" disabled={!finished}>Write this batch</button>
                   <button type="submit" name="intent" value="remove" className="pm-btn pm-btn-ghost pm-btn-sm">Take selected out</button>
                   <button type="submit" name="intent" value="cancel" className="pm-btn pm-btn-quiet pm-btn-sm">Cancel this batch</button>
-                  <span className="pm-muted">Articles taken out are approved again.</span>
+                  <span className="pm-muted">Writing holds the credits first and charges only for articles that come out ready.</span>
+                </div>
+              ) : null}
+              {arts.length > 0 ? (
+                <div style={{ marginTop: "0.5rem" }}>
+                  <p className="pm-muted">
+                    {pc.ready} ready · {pc.open} in progress · {pc.failed} failed · {pc.canceled} cancelled
+                    {b.status === "completed" && typeof b.stats.charged === "number" ? ` · charged ${b.stats.charged} credit${b.stats.charged === 1 ? "" : "s"}` : ""}
+                    {b.status === "running" ? ` · ${b.credit_amount} credit${b.credit_amount === 1 ? "" : "s"} held` : ""}
+                  </p>
+                  {b.status === "running" ? (
+                    <button type="submit" formAction={stopBatch} className="pm-btn pm-btn-quiet pm-btn-sm">Stop writing</button>
+                  ) : null}
                 </div>
               ) : null}
             </form>
@@ -222,7 +249,7 @@ export default async function BatchesPage({ params, searchParams }: { params: Pr
             </ul>
           </details>
         ) : null}
-        <p className="pm-muted">Credit estimate per batch: not priced yet (writing articles is not available yet).</p>
+        <p className="pm-muted">The price of writing an article is set by the PinMentor team. If it is not set yet, writing cannot start.</p>
       </section>
     </AppFrame>
   );

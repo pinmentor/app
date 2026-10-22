@@ -125,6 +125,10 @@ export async function runTick(): Promise<TickSummary> {
   const mapWd = await sb.rpc("map_run_watchdog");
   if (mapWd.error) console.error("map_run_watchdog failed:", mapWd.error.code ?? "no_code");
 
+  // fails articles whose job died or stalled (their batch then settles: a failed article is free)
+  const artWd = await sb.rpc("article_watchdog");
+  if (artWd.error) console.error("article_watchdog failed:", artWd.error.code ?? "no_code");
+
   const outcomes: Outcome[] = [];
   let claimed = 0;
   let rounds = 0;

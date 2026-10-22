@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Logo } from "@/components/brand";
 import { signOut } from "@/app/dashboard/actions";
 
-type Section = "users" | "jobs" | "keys" | "maps";
+type Section = "users" | "jobs" | "keys" | "maps" | "credits";
 
 const UsersIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
@@ -33,6 +33,13 @@ const MapIcon = () => (
   </svg>
 );
 
+const CoinIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M12 7.5v9M9.5 10c0-1 1-1.7 2.5-1.7s2.5.7 2.5 1.7-1 1.5-2.5 1.9-2.5.9-2.5 1.9 1 1.7 2.5 1.7 2.5-.7 2.5-1.7" />
+  </svg>
+);
+
 /** Admin chrome: dark sidebar on desktop, top bar on small screens. Wraps every admin page. */
 export function AdminShell({
   current,
@@ -57,6 +64,7 @@ export function AdminShell({
           {link("/admin/users", "Users", "users", <UsersIcon />)}
           {link("/admin/jobs", "Jobs & LLM", "jobs", <JobsIcon />)}
           {link("/admin/maps", "Topical maps", "maps", <MapIcon />)}
+          {link("/admin/credits", "Credit prices", "credits", <CoinIcon />)}
           {link("/admin/integrations", "API keys", "keys", <KeyIcon />)}
         </nav>
         <div className="pm-sidefoot">
