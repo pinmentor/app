@@ -7,10 +7,14 @@ import {
   type ConclusionContent, type FaqContent, type IntroContent, type ItemContent, type StoredOutline,
 } from "./prompts";
 import { renderArticle, countWords, plainText, type ArticleParts } from "./render";
-import { qaArticle } from "./qa";
+import { qaArticle, type QaReport } from "./qa";
+import { LlmError } from "@/modules/llm/errors";
+import type { ProviderName } from "@/modules/llm/errors";
+import { mergeReview, reviewPrompt, reviewSchema, reviewText, type StoredReview } from "./review";
+import * as G from "./gloss";
 
 /**
- * Article writer v1 (Type A). Three kinds of short, idempotent jobs, all keyed by article id:
+ * Article writer v1 (Type A). (Batch 13: assemble no longer finishes the article; a review job does, see below.) Three kinds of short, idempotent jobs, all keyed by article id:
  *   article.outline  -> plans the list, stores the outline, enqueues the section jobs
  *   article.sections -> writes ONE part (intro | up to 5 items | faq+conclusion), stores it, and the job that completes the set enqueues assemble
  *   article.assemble -> renders escaped HTML, runs the mechanical QA, marks the article ready (article_finish settles the batch)
@@ -172,37 +176,173 @@ const sectionsJob: JobHandler = guarded(async (ctx) => {
 });
 
 // ---------------------------------------------------------------------------
+type Sections = { rows: { kind: string; idx: number; content: unknown }[] };
+
+async function readSections(articleId: string): Promise<Sections> {
+  const r = await db().from("article_sections").select("kind, idx, content").eq("article_id", articleId).order("idx");
+  if (r.error) throw new JobError("sections read failed", "db_error", { retryable: true });
+  return { rows: (r.data ?? []) as Sections["rows"] };
+}
+const pick = <T,>(s: Sections, kind: string, idx = 0) => s.rows.find((x) => x.kind === kind && x.idx === idx)?.content as T | undefined;
+
+/** The article's parts from the stored sections, or null while something is still missing. */
+function partsOf(l: Loaded, o: StoredOutline, s: Sections): ArticleParts | null {
+  const intro = pick<IntroContent>(s, "intro");
+  const faq = pick<FaqContent>(s, "faq");
+  const conclusion = pick<ConclusionContent>(s, "conclusion");
+  const items = Array.from({ length: o.n }, (_, i) => pick<ItemContent>(s, "item", i));
+  if (!intro || !faq || !conclusion || items.some((x) => !x)) return null;
+  return { title: l.item.title ?? l.art.keyword, locale: l.art.locale, highlights: o.highlights, intro, items: items as ItemContent[], faq, conclusion };
+}
+
+/** Renders and runs the mechanical QA, stores them (the article stays `writing`) and hands over to the language review. */
 const assembleJob: JobHandler = guarded(async (ctx) => {
   const { articleId } = parsePayload(articlePayload, ctx.payload);
   const l = await load(ctx, articleId);
   if (!l) return { skipped: "final" };
   const o = storedOutline(l);
-  const r = await db().from("article_sections").select("kind, idx, content").eq("article_id", articleId).order("idx");
-  if (r.error) throw new JobError("sections read failed", "db_error", { retryable: true });
-  const rows = (r.data ?? []) as { kind: string; idx: number; content: unknown }[];
-  const get = <T,>(kind: string, idx = 0) => rows.find((x) => x.kind === kind && x.idx === idx)?.content as T | undefined;
+  const parts = partsOf(l, o, await readSections(articleId));
+  if (!parts) throw new JobError("sections incomplete", "sections_incomplete", { retryable: true, retryAfterSeconds: 5 });
 
-  const intro = get<IntroContent>("intro");
-  const faq = get<FaqContent>("faq");
-  const conclusion = get<ConclusionContent>("conclusion");
-  const items = Array.from({ length: o.n }, (_, i) => get<ItemContent>("item", i));
-  if (!intro || !faq || !conclusion || items.some((x) => !x)) throw new JobError("sections incomplete", "sections_incomplete", { retryable: true, retryAfterSeconds: 5 });
-
-  const parts: ArticleParts = { title: l.item.title ?? l.art.keyword, locale: l.art.locale, highlights: o.highlights, intro, items: items as ItemContent[], faq, conclusion };
   const html = renderArticle(parts);
   const qa = qaArticle(parts, l.item.slug, o.n, l.item.target_words);
   const words = countWords(plainText(parts));
+  const up = await db().from("articles").update({ title: parts.title, slug: l.item.slug, body_html: html, word_count: words, qa, stats: { qa_verdict: qa.verdict, items: o.n } }).eq("id", articleId).in("status", ["queued", "writing"]);
+  if (up.error) throw new JobError("assemble save failed", "db_error", { retryable: true });
+  await enqueue(ctx, "article.review", { articleId }, `article:${articleId}:review`, { stage: "review" });
+  return { words, qa: qa.verdict };
+});
+
+/** Provider of the model that wrote the sections (so the reviewer can be a different one), from the LLM call log. */
+async function writerProvider(articleId: string): Promise<ProviderName | undefined> {
+  const jobs = await db().from("jobs").select("id").eq("type", "article.sections").eq("payload->>articleId", articleId).limit(50);
+  const ids = ((jobs.data ?? []) as { id: string }[]).map((j) => j.id);
+  if (jobs.error || ids.length === 0) return undefined;
+  const calls = await db().from("llm_calls").select("provider").in("job_id", ids).eq("task", "article_write").eq("status", "ok").limit(1);
+  const p = (calls.data as { provider?: string }[] | null)?.[0]?.provider;
+  return p === "anthropic" || p === "openai" || p === "gemini" ? p : undefined;
+}
+
+const storedQa = z.object({ verdict: z.enum(["pass", "flag", "fail"]), words: z.number(), checks: z.array(z.object({ id: z.string(), status: z.enum(["pass", "flag", "fail"]), summary: z.string() })) });
+
+/**
+ * Language review by a second model, then the article is finished `ready` (this is where the batch can settle).
+ * Never blocks the article: when the review cannot run (no key, provider down on the last attempt) it is recorded as skipped,
+ * which is a yellow flag in the QA report, not a pass. Earlier attempts retry normally.
+ */
+const reviewJob: JobHandler = async (ctx) => {
+  const { articleId } = parsePayload(articlePayload, ctx.payload);
+  const l = await load(ctx, articleId);
+  if (!l) return { skipped: "final" };
+  const o = storedOutline(l);
+  const sec = await readSections(articleId);
+  const parts = partsOf(l, o, sec);
+  if (!parts) throw new JobError("sections incomplete", "sections_incomplete", { retryable: false });
+  const row = await db().from("articles").select("qa, title, slug, body_html, word_count").eq("id", articleId).maybeSingle();
+  const qa = storedQa.safeParse(row.data?.qa);
+  if (row.error || !qa.success || !row.data) throw new JobError("assembled article missing", "assemble_missing", { retryable: false });
+
+  let review: StoredReview;
+  try {
+    const p = reviewPrompt(reviewText(parts), l.art.locale);
+    const avoid = await writerProvider(articleId);
+    let cross = avoid !== undefined;
+    const base = { task: "qa_cross_judge", workspaceId: ctx.workspaceId, jobId: ctx.jobId, system: p.system, prompt: p.prompt, schema: reviewSchema, maxOutputTokens: 6000, temperature: 0 };
+    let r;
+    try {
+      r = await callLlm({ ...base, avoidProvider: avoid });
+    } catch (e) {
+      if (!(e instanceof LlmError) || e.code !== "no_route" || avoid === undefined) throw e;
+      cross = false; // only the writer's provider has a key: review with it, and say so
+      r = await callLlm(base);
+    }
+    review = { status: "done", verdict: r.data.verdict, issues: r.data.issues, risky_claims: r.data.risky_claims, model: r.modelKey, provider: r.provider, cross_model: cross && r.provider !== avoid };
+  } catch (e) {
+    const code = e instanceof LlmError || e instanceof JobError ? e.code : "unexpected";
+    if (ctx.attempt < MAX_ATTEMPTS && !(e instanceof LlmError && !e.retryable)) throw e;
+    review = { status: "skipped", issues: [], risky_claims: [], reason: code };
+  }
+
+  const merged: QaReport = mergeReview(qa.data, review);
   await rpc("article_finish", {
     p_article: articleId,
     p_status: "ready",
     p_error: null,
-    p_patch: { title: parts.title, slug: l.item.slug, body_html: html, word_count: words, qa, stats: { qa_verdict: qa.verdict, items: o.n } },
+    p_patch: { title: row.data.title, slug: row.data.slug, body_html: row.data.body_html, word_count: row.data.word_count, qa: merged, review, stats: { qa_verdict: merged.verdict, items: o.n, review: review.status } },
   });
-  return { words, qa: qa.verdict };
-});
+  return { review: review.status, verdict: merged.verdict };
+};
+
+// ---------------------------------------------------------------------------
+// Translation gloss (on demand, article is already ready): one job per part; a part that already exists is skipped.
+const glossPayload = z.object({ glossArticleId: uuid, lang: z.enum(["en", "bn"]), part: z.string().regex(G.partPattern) });
+
+const glossJob: JobHandler = async (ctx) => {
+  const { glossArticleId, lang, part } = parsePayload(glossPayload, ctx.payload);
+  const a = await db().from("articles").select("id, workspace_id, status, outline").eq("id", glossArticleId).eq("workspace_id", ctx.workspaceId).maybeSingle();
+  if (a.error) throw new JobError("article lookup failed", "db_error", { retryable: true });
+  if (!a.data || a.data.status !== "ready") return { skipped: "not_ready" };
+  const o = storedOutlineSchema.safeParse(a.data.outline);
+  if (!o.success) throw new JobError("outline missing", "outline_missing", { retryable: false });
+  const n = o.data.n;
+  const sec = await readSections(glossArticleId);
+  const have = await db().from("article_gloss").select("kind, idx").eq("article_id", glossArticleId).eq("lang", lang);
+  if (have.error) throw new JobError("gloss read failed", "db_error", { retryable: true });
+  const has = (kind: string, idx: number) => ((have.data ?? []) as { kind: string; idx: number }[]).some((h) => h.kind === kind && h.idx === idx);
+  const base = { article_id: glossArticleId, workspace_id: ctx.workspaceId, lang };
+  const run = { task: "article_gloss", workspaceId: ctx.workspaceId, jobId: ctx.jobId, temperature: 0 };
+  const save = async (rows: { kind: string; idx: number; content: unknown }[]) => {
+    const r = await db().from("article_gloss").upsert(rows.map((x) => ({ ...base, ...x })), { onConflict: "article_id,lang,kind,idx" });
+    if (r.error) throw new JobError("gloss save failed", "db_error", { retryable: true });
+  };
+  const need = <T,>(v: T | undefined): T => {
+    if (v === undefined) throw new JobError("article section missing", "sections_incomplete", { retryable: false });
+    return v;
+  };
+
+  if (part === "head") {
+    if (!has("head", 0)) {
+      const title = (await db().from("articles").select("title").eq("id", glossArticleId).maybeSingle()).data?.title;
+      const p = G.headPrompt(lang, typeof title === "string" ? title : "", o.data.highlights);
+      const r = await callLlm({ ...run, system: p.system, prompt: p.prompt, schema: G.headSchema, maxOutputTokens: 2000 });
+      await save([{ kind: "head", idx: 0, content: r.data }]);
+    }
+  } else if (part === "intro") {
+    if (!has("intro", 0)) {
+      const p = G.paragraphsPrompt(lang, need(pick<IntroContent>(sec, "intro")).paragraphs);
+      const r = await callLlm({ ...run, system: p.system, prompt: p.prompt, schema: G.paragraphsSchema, maxOutputTokens: 3000 });
+      await save([{ kind: "intro", idx: 0, content: { paragraphs: r.data.paragraphs } }]);
+    }
+  } else if (part === "faq") {
+    if (!has("faq", 0) || !has("conclusion", 0)) {
+      const p = G.faqPrompt(lang, need(pick<FaqContent>(sec, "faq")), need(pick<ConclusionContent>(sec, "conclusion")));
+      const r = await callLlm({ ...run, system: p.system, prompt: p.prompt, schema: G.faqSchema, maxOutputTokens: 5000 });
+      await save([{ kind: "faq", idx: 0, content: { items: r.data.faq } }, { kind: "conclusion", idx: 0, content: { paragraphs: r.data.conclusion } }]);
+    }
+  } else {
+    const from = Number(part.slice("items:".length));
+    const to = Math.min(n, from + G.GLOSS_ITEMS_PER_JOB);
+    const missing = Array.from({ length: to - from }, (_, k) => from + k).filter((i) => !has("item", i));
+    if (missing.length > 0) {
+      const p = G.itemsPrompt(lang, missing.map((i) => ({ i: i + 1, content: need(pick<ItemContent>(sec, "item", i)) })));
+      const r = await callLlm({ ...run, system: p.system, prompt: p.prompt, schema: G.itemsSchema, maxOutputTokens: 9000 });
+      const rows: { kind: string; idx: number; content: unknown }[] = [];
+      for (const it of r.data) {
+        const idx = it.i - 1;
+        if (!missing.includes(idx) || rows.some((x) => x.idx === idx)) continue;
+        rows.push({ kind: "item", idx, content: { heading: it.heading, paragraphs: it.paragraphs, bullets: it.bullets } });
+      }
+      await save(rows);
+      if (rows.length < missing.length) throw new JobError("model skipped some items", "items_missing", { retryable: true, retryAfterSeconds: 2 });
+    }
+  }
+  return { part, lang };
+};
 
 export const articleHandlers: Record<string, JobHandler> = {
   "article.outline": outlineJob,
   "article.sections": sectionsJob,
   "article.assemble": assembleJob,
+  "article.review": reviewJob,
+  "article.gloss": glossJob,
 };

@@ -1,6 +1,6 @@
 # PinMentor — হ্যান্ডঅফ (নতুন চ্যাটে কাজ চালিয়ে যাওয়ার জন্য)
 
-> আপডেট: ২০২৬-১০-২২, Batch 12 শেষে। নতুন চ্যাটে এই ফাইল + সর্বশেষ রিপো-জিপ + `docs/PLAN.md` + `CLAUDE.md` + `sandbox-tools.zip` দাও।
+> আপডেট: ২০২৬-১০-২২, Batch 13 শেষে। নতুন চ্যাটে এই ফাইল + সর্বশেষ রিপো-জিপ + `docs/PLAN.md` + `CLAUDE.md` + `sandbox-tools.zip` দাও।
 > প্রথমে `CLAUDE.md`, `docs/PROGRESS.md`, `docs/PLAN.md` পড়ো, তারপর এই ফাইলের "পরের কাজ" থেকে শুরু করো।
 
 ## ১. প্রজেক্ট এক লাইনে
@@ -31,6 +31,7 @@ PinMentor = মাল্টি-ইউজার SaaS: টপিক → যাচ�
 | 10 | হাতে Merge / Split / Move (`0014`, `plan_links_fix`) | জিপ দেওয়া হয়েছে; `0014`/`rls_0014` (২০/২০) মালিক চালিয়েছেন; ব্রাউজারে Merge/Split/Move মালিক নিজে পরীক্ষা করেননি (ধরে নিয়েছেন ঠিক)। Batch 09 মালিক ব্রাউজারে পরীক্ষা করে ঠিক বলেছেন |
 | 11 | স্ট্যাটাস-তালিকা PLAN §৪.১ (`draft`→`proposed`, `0015`), `batches` (`0016`), `/maps/[id]` তিন ট্যাব: Review / Dashboard / Batches | জিপ দেওয়া হয়েছে; `0015`/`0016`, `rls_0015` (১৩), `rls_0016` (২৬), আপডেট-করা `rls_0010/0013/0014` ও ব্রাউজার-যাচাই মালিকের বাকি; ক্রেডিট-দাম ও ব্যাচ-স্ট্যাটাসের নাম মালিকের সিদ্ধান্ত অপেক্ষমান |
 | 12 | ক্রেডিট-দামের অ্যাডমিন `/admin/credits` + মাপা-খরচ রিপোর্ট (`0017`), আর্টিকেল-লেখা v1 Type A: `articles`, ব্যাচ-রান/hold/settle/cancel/watchdog (`0018`), `src/modules/articles/`, Batches-এ "Write this batch" | জিপ দেওয়া হয়েছে; `0017`/`0018`, `rls_0017` (১১), `rls_0018` (২৭) ও আসল রান মালিকের বাকি। **`article_write`-এর দাম বসানো নেই (মালিকের কাজ); আসল LLM-এ প্রম্পট চালানো হয়নি।** Batch 11 মালিক নিশ্চিত |
+| 13 | স্প্যানিশ-অন্ধ রিভিউ (PLAN §৫.১): `article.review` (দ্বিতীয় মডেলের ভাষা-রিভিউ + ঝুঁকিপূর্ণ-দাবি), ট্রাফিক-লাইট, অনুরোধে ইংরেজি/বাংলা অনুবাদ-গ্লস (`0019`: `articles.review`, `article_gloss`, `article_gloss_request`, রুট `article_gloss`) | জিপ দেওয়া হয়েছে; `0019`/`rls_0019` (১৩) ও আসল রান মালিকের বাকি। **আসল LLM-এ রিভিউ/অনুবাদ প্রম্পট চালানো হয়নি।** Batch 12 মালিক নিশ্চিত |
 
 মালিকের বাকি করণীয় প্রতিটি ব্যাচের জন্য `docs/PROGRESS.md`-এর "মালিকের করণীয়" অংশে। **নতুন চ্যাটের প্রথম কাজ:** মালিককে জিজ্ঞেস করো Batch 06-এর আপলোড/CI সবুজ কি না, `0010` ও `rls_0010.sql` (৩৭/৩৭) ফল কী, এবং `/admin/maps`-এ ছোট রানের ফল (status, রিপোর্ট verdict ও V-সারি, লাল জব)। `rls_0008` ৬২/৬২ ও `pgvector_0009` ১৮/১৮ মালিক আগেই নিশ্চিত করেছেন। লাল হলে আগে ঠিক করো।
 
@@ -45,7 +46,7 @@ PinMentor = মাল্টি-ইউজার SaaS: টপিক → যাচ�
 - ডিজাইন সিস্টেম: `src/app/globals.css` — টোকেন (লেগুন টিল `--brand`, পিন রোজ `--pin`, গাঁদা `--gold`), `pm-` ক্লাস, লাইট/ডার্ক অটো। নতুন UI-তে Tailwind ইউটিলিটি নয়, `pm-` ক্লাস; দরকারে `globals.css`-এর `@layer components`-এ যোগ করো।
 
 ## ৫. মূল প্রযুক্তিগত তথ্য
-- **আর্টিকেল-লেখা:** `src/modules/articles/` — `prompts.ts` (প্রম্পট + Zod স্কিমা), `render.ts` (এস্কেপ-করা HTML), `qa.ts` (যান্ত্রিক QA), `progress.ts`, `handlers.ts` (`article.outline|sections|assemble`, `jobs/handlers.ts`-এ নিবন্ধিত)। SQL (`0018`): `batch_run_start` hold করে, `article_finish` প্রতিটি শেষ হলে `batch_settle_if_done` ডাকে; দাম প্রতি `ready` আর্টিকেল; `PM005` = দাম নেই। `runner.ts` প্রতি tick-এ `article_watchdog` ডাকে।
+- **আর্টিকেল-লেখা:** `src/modules/articles/` — `prompts.ts` (প্রম্পট + Zod স্কিমা), `render.ts` (এস্কেপ-করা HTML), `qa.ts` (যান্ত্রিক QA), `progress.ts`, `review.ts` (ভাষা-রিভিউ প্রম্পট/স্কিমা, ট্রাফিক-লাইট), `gloss.ts` (অনুবাদ), `handlers.ts` (`article.outline|sections|assemble|review|gloss`, `jobs/handlers.ts`-এ নিবন্ধিত)। SQL (`0018`): `batch_run_start` hold করে, `article_finish` প্রতিটি শেষ হলে `batch_settle_if_done` ডাকে; দাম প্রতি `ready` আর্টিকেল; `PM005` = দাম নেই। `runner.ts` প্রতি tick-এ `article_watchdog` ডাকে।
 - **ক্রেডিট লেজার:** append-only, held→committed|released, idempotency key, ওয়ার্কস্পেস-ভিত্তিক advisory lock। এরর: `PM001` insufficient_credits, `PM002` idempotency_conflict, `PM003` invalid_state, `PM004` not_found।
 - **জব কিউ:** `FOR UPDATE SKIP LOCKED`, লিজ, watchdog, dead-letter, প্রোভাইডার-ভিত্তিক কনকারেন্সি; জবের সাথে ক্রেডিট-হোল্ড। pg_cron → pg_net → `/api/jobs/tick` (Bearer `CRON_SECRET`)।
 - **অ্যাডমিন অ্যাকশন প্যাটার্ন:** `requireAdmin()` → রোল-চেক → Zod → `createAdminClient().rpc("admin_*", {p_admin, …, p_ip})` (SQL ফাংশন আবার রোল চেক করে ও `admin_audit` লেখে) → `revalidatePath` → `redirect(...?flash=code)`। ক্লায়েন্টকে কখনো ভেতরের এরর/সিক্রেট ফেরত নয়।
@@ -56,10 +57,10 @@ PinMentor = মাল্টি-ইউজার SaaS: টপিক → যাচ�
 - স্প্যানিশ লোকেল ডিফল্ট `es-MX` (মালিক আমার সিদ্ধান্তে ছেড়েছেন)। স্লাগে সাল নয়, আর্টিকেলে দাম/ডিসকাউন্ট নয় (CLAUDE.md)।
 
 ## ৬. পরের কাজ
-Batch 12 হয়েছে। **মালিককে প্রথমে জিজ্ঞেস করো:** `0017`/`0018` ও `rls_0017` (১১/১১), `rls_0018` (২৭/২৭) চালিয়েছেন কি না; `/admin/credits` খুলেছে কি না; ছোট ব্যাচে (দাম `0` বসিয়ে) আসল রান কেমন গেল — আর্টিকেল `ready` হলো কি না, লেখার মান, QA-ফ্ল্যাগ, `/admin/jobs`-এ লাল `article.*` জব, এবং "What an article really costs us"-এর সংখ্যা। লাল হলে আগে ঠিক করো (প্রম্পট/স্কিমা-সহনশীলতা আসল আউটপুট না দেখে অনুমান)।
-**স্থায়ী নিয়ম:** `article_write`-এর ক্রেডিট-দাম মালিক নিজে `/admin/credits` থেকে ঠিক করবেন; আমি কোনো দাম বসাই না, মালিককে না জিজ্ঞেস করে ক্রেডিট-দাম বা স্ট্যাটাস-নাম বদলাই না। দাম না থাকলে রান `PM005` দিয়ে আটকায়।
-চালু অবস্থা: S1→S9; `/maps/[id]` Review/Dashboard/Batches; ব্যাচ → "Write this batch" (hold) → `article.outline` → `article.sections` → `article.assemble` → `draft_ready`; আর্টিকেল-পেজ `/maps/[id]/articles/[articleId]`। পাবলিশ/Pinterest এখনো নেই।
-**পরের সম্ভাব্য কাজ (মালিকের ফল দেখে):** প্রম্পট/QA টিউন; ক্রেডিট-এস্টিমেট দেখানো (দাম ঠিক হলে); ব্যর্থ আর্টিকেলের retry; আর্টিকেল সম্পাদনা; গবেষণা/তথ্য-ভিত্তি (PLAN §৫); Type B; ছবি; দ্বিতীয় মডেলের ভাষা-QA; তারপর WordPress পাবলিশ।
+Batch 13 হয়েছে। **মালিককে প্রথমে জিজ্ঞেস করো:** `0019` ও `rls_0019` (১৩/১৩) চালিয়েছেন কি না; পুরনো আর্টিকেলে বাংলা/ইংরেজি অনুবাদ কাজ করল কি না ও অর্থ-বিচার চলে কি না; নতুন আর্টিকেলে ট্রাফিক-লাইট, `language_review` ও `risky_claims` কেমন (রিভিউ কি বেশি কড়া/ঢিলা?), "SAME company" লেখা এল কি না (শুধু এক কোম্পানির কী থাকলে), `/admin/credits`-এ `qa_cross_judge`/`article_gloss` খরচ, `/admin/jobs`-এ লাল `article.*` জব। লাল হলে আগে ঠিক করো (প্রম্পট/স্কিমা আসল আউটপুট না দেখে অনুমান)।
+**স্থায়ী নিয়ম:** `article_write`-এর ক্রেডিট-দাম মালিক `/admin/credits` থেকে ঠিক করবেন; আমি কোনো দাম বসাই না, মালিককে না জিজ্ঞেস করে ক্রেডিট-দাম বা স্ট্যাটাস-নাম বদলাই না। দাম না থাকলে রান `PM005` দিয়ে আটকায়। **টেস্টে কখনো সময় (`now()`/`created_at`) দেখে "সর্বশেষ সারি" বাছা নয়** (Supabase SQL Editor ফাইল এক ট্রানজেকশনে চালায়); নতুন `rls_*` ফাইল এক-ট্রানজেকশনেও (`psql -c "$(cat file)"`) চালাও।
+চালু অবস্থা: S1→S9; Review/Dashboard/Batches; ব্যাচ → "Write this batch" (hold) → `article.outline` → `article.sections` → `article.assemble` → `article.review` (`ready`; এখানে settle) ; আর্টিকেল-পেজ `/maps/[id]/articles/[articleId]`: ট্রাফিক-লাইট, QA, ভাষা-রিভিউ, অনুবাদ-গ্লস, প্রিভিউ। পাবলিশ/Pinterest এখনো নেই।
+**পরের সম্ভাব্য কাজ (মালিকের ফল দেখে):** প্রম্পট/QA/সীমা টিউন; গবেষণা/তথ্য-ভিত্তি (PLAN §৫); ইমেজ + WordPress পাবলিশ (লালে বন্ধ); ব্যাক-ট্রান্সলেশন; ক্রেডিট-এস্টিমেট (দাম ঠিক হলে); ব্যর্থ আর্টিকেলের retry; আর্টিকেল সম্পাদনা; Type B।
 
 ## ৭. খোলা ঋণ ও সতর্কতা
 - **লকফাইল ঋণ:** `pnpm-lock.yaml` পুরনো (এই স্যান্ডবক্সে npm বন্ধ ছিল)। সাময়িক: `.npmrc` (`frozen-lockfile=false`) ও CI-তে `--no-frozen-lockfile`। কোনো কম্পিউটারে `pnpm install` চালিয়ে নতুন লকফাইল কমিট, তারপর `.npmrc` মুছে `--frozen-lockfile` ফেরানো। নতুন devDependency `tsx` (Batch 03) ওই লকফাইলেই যাবে।

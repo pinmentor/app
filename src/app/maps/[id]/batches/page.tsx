@@ -7,6 +7,7 @@ import { AppFrame } from "../../chrome";
 import { MapTabs } from "../../map-tabs";
 import { loadMap, suggestFor } from "../load";
 import { progressCounts } from "@/modules/articles/progress";
+import { lightOf } from "@/modules/articles/review";
 import { changeBatch, createAutoBatches, createManualBatch, runBatch, stopBatch } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -209,7 +210,7 @@ export default async function BatchesPage({ params, searchParams }: { params: Pr
                         <td>{i.title ?? ""}</td>
                         <td>
                           <span className="pm-pill pm-pill-running">{i.status}</span>
-                          {artOf.get(i.id)?.status === "ready" ? <> <Link href={`/maps/${map.run.id}/articles/${artOf.get(i.id)?.id}`}>Read</Link></> : null}
+                          {artOf.get(i.id)?.status === "ready" ? <> <span className={`pm-pill ${{ green: "pm-pill-succeeded", yellow: "pm-pill-running", red: "pm-pill-dead" }[lightOf(artOf.get(i.id)?.qa.verdict)]}`}>{lightOf(artOf.get(i.id)?.qa.verdict)}</span> <Link href={`/maps/${map.run.id}/articles/${artOf.get(i.id)?.id}`}>Read</Link></> : null}
                         </td>
                       </tr>
                     ))}
