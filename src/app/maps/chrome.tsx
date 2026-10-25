@@ -11,7 +11,9 @@ export function AppFrame({ email, children }: { email: string; children: ReactNo
         <div className="pm-wrap pm-appbar-in">
           <Logo href="/dashboard" />
           <div className="pm-appbar-user">
-            <Link href="/dashboard">Dashboard</Link>
+            <Link href="/dashboard">Home</Link>
+            <Link href="/maps">Maps</Link>
+            <Link href="/sites">WordPress</Link>
             <span>{email}</span>
             <form action={signOut}>
               <button type="submit" className="pm-btn pm-btn-quiet pm-btn-sm">

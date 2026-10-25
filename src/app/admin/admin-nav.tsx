@@ -2,8 +2,13 @@ import Link from "next/link";
 import { Logo } from "@/components/brand";
 import { signOut } from "@/app/dashboard/actions";
 
-type Section = "users" | "jobs" | "keys" | "maps" | "credits";
+type Section = "overview" | "users" | "jobs" | "keys" | "maps" | "credits";
 
+const HomeIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M4 11l8-7 8 7M6 9.5V20h12V9.5M10 20v-6h4v6" />
+  </svg>
+);
 const UsersIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
     <circle cx="9" cy="8" r="3.5" />
@@ -59,11 +64,14 @@ export function AdminShell({
   return (
     <div className="pm-admin">
       <aside className="pm-side">
-        <Logo href="/admin/users" />
+        <Logo href="/admin" />
         <nav className="pm-sidenav" aria-label="Admin">
+          {link("/admin", "Overview", "overview", <HomeIcon />)}
+          <p className="pm-sidegroup">Customers</p>
           {link("/admin/users", "Users", "users", <UsersIcon />)}
-          {link("/admin/jobs", "Jobs & LLM", "jobs", <JobsIcon />)}
           {link("/admin/maps", "Topical maps", "maps", <MapIcon />)}
+          <p className="pm-sidegroup">Operations</p>
+          {link("/admin/jobs", "Jobs & LLM", "jobs", <JobsIcon />)}
           {link("/admin/credits", "Credit prices", "credits", <CoinIcon />)}
           {link("/admin/integrations", "API keys", "keys", <KeyIcon />)}
         </nav>
