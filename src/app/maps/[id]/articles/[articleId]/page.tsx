@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { GLOSS_LANGS, glossRowCount, isGlossLang, type GlossLang } from "@/modules/articles/gloss";
 import { lightOf, storedReviewSchema, type Light } from "@/modules/articles/review";
 import { AppFrame } from "../../../chrome";
-import { requestGloss } from "./actions";
+import { requestGloss, sendToWordPress } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Article — PinMentor" };
@@ -15,7 +15,7 @@ const rowSchema = z.object({
   body_html: z.string().nullable(), word_count: z.number().nullable(), last_error: z.string().nullable(),
   qa: z.object({ verdict: z.string().optional(), checks: z.array(z.object({ id: z.string(), status: z.string(), summary: z.string() })).optional() }).passthrough(),
   review: z.unknown(), outline: z.object({ n: z.number() }).passthrough(),
-  meta_description: z.string().nullable(), schema_json: z.unknown(), links: z.array(z.object({ role: z.string(), title: z.string(), slug: z.string() })).catch([]),
+  meta_description: z.string().nullable(), schema_json: z.unknown(), wp_edit_url: z.string().nullable(), links: z.array(z.object({ role: z.string(), title: z.string(), slug: z.string() })).catch([]),
 });
 const sectionRow = z.object({ kind: z.string(), idx: z.number(), content: z.unknown() });
 
@@ -33,6 +33,13 @@ const FLASH: Record<string, { text: string; bad: boolean }> = {
   started: { text: "Translation started. Refresh in a minute or two; parts appear as they finish.", bad: false },
   notready: { text: "This article is not finished, so it cannot be translated yet.", bad: true },
   gone: { text: "Article not found.", bad: true },
+  sent: { text: "Saved in WordPress as a draft. Open it there, check it, and publish when you are happy.", bad: false },
+  sent_noschema: { text: "Saved as a draft, but WordPress removed the schema (JSON-LD) script: this user lacks the unfiltered_html right. The text is fine; add schema with an SEO plugin or use an Administrator user.", bad: true },
+  sent_unsaved: { text: "The draft was created in WordPress, but PinMentor could not record it. Pressing the button again may create a second draft.", bad: true },
+  no_site: { text: "No WordPress site is connected yet. Connect one on the WordPress page, then come back.", bad: true },
+  site_choice: { text: "You have several sites and this project has none chosen. Remove the ones you do not use on the WordPress page.", bad: true },
+  no_master_key: { text: "The stored password cannot be read (ENCRYPTION_KEY changed or missing). Connect the site again.", bad: true },
+  wp_failed: { text: "WordPress did not accept the draft.", bad: true },
   error: { text: "Something went wrong. Nothing was changed; try again.", bad: true },
 };
 const TABS = [
@@ -46,7 +53,7 @@ type Block = { label: string; original: string[]; translated: string[] | null };
 const arr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
 const obj = (v: unknown): Record<string, unknown> => (typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {});
 
-export default async function ArticlePage({ params, searchParams }: { params: Promise<{ id: string; articleId: string }>; searchParams: Promise<{ tab?: string; lang?: string; flash?: string }> }) {
+export default async function ArticlePage({ params, searchParams }: { params: Promise<{ id: string; articleId: string }>; searchParams: Promise<{ tab?: string; lang?: string; flash?: string; code?: string }> }) {
   const p = await params;
   const ids = z.object({ id: z.string().uuid(), articleId: z.string().uuid() }).safeParse(p);
   if (!ids.success) notFound();
@@ -60,7 +67,7 @@ export default async function ArticlePage({ params, searchParams }: { params: Pr
   // through the user's session: another workspace's article is simply not found (RLS)
   const res = await supabase
     .from("articles")
-    .select("id, map_run_id, status, title, slug, keyword, body_html, word_count, last_error, qa, review, outline, meta_description, schema_json, links")
+    .select("id, map_run_id, status, title, slug, keyword, body_html, word_count, last_error, qa, review, outline, meta_description, schema_json, links, wp_edit_url")
     .eq("id", ids.data.articleId)
     .eq("map_run_id", ids.data.id)
     .maybeSingle();
@@ -131,7 +138,13 @@ export default async function ArticlePage({ params, searchParams }: { params: Pr
         {art.word_count !== null ? ` · ${art.word_count} words` : ""}
         {art.slug ? ` · /${art.slug}` : ""}
       </p>
-      {flash ? <p className={flash.bad ? "pm-note pm-note-bad" : "pm-note"}>{flash.text}</p> : null}
+      {flash ? (
+        <p className={flash.bad ? "pm-note pm-note-bad" : "pm-note"}>
+          {flash.text}
+          {sp.flash === "wp_failed" && sp.code ? ` (${sp.code.slice(0, 40).replace(/[^a-z0-9_]/gi, "")})` : ""}
+          {sp.flash === "no_site" || sp.flash === "site_choice" || sp.flash === "wp_failed" ? <> <Link href="/sites">WordPress page &rarr;</Link></> : null}
+        </p>
+      ) : null}
       {art.status === "failed" || art.status === "canceled" ? <p className="pm-note pm-note-bad">This article was not written ({art.last_error ?? art.status}). It was not charged.</p> : null}
       {art.status === "queued" || art.status === "writing" ? <p className="pm-note">Still being written. Refresh in a minute.</p> : null}
 
@@ -143,6 +156,15 @@ export default async function ArticlePage({ params, searchParams }: { params: Pr
               <b>{LIGHT_BOX[light].title}</b>
               <span>{LIGHT_BOX[light].text}</span>
             </div>
+          </div>
+
+          <div className="pm-inline" style={{ gap: "0.75rem", margin: "0.75rem 0" }}>
+            <form action={sendToWordPress}>
+              <input type="hidden" name="run" value={art.map_run_id} />
+              <input type="hidden" name="article" value={art.id} />
+              <button type="submit" className={art.wp_edit_url ? "pm-btn" : "pm-btn pm-btn-primary"}>{art.wp_edit_url ? "Update the WordPress draft" : "Send to WordPress as draft"}</button>
+            </form>
+            {art.wp_edit_url ? <a href={art.wp_edit_url} target="_blank" rel="noopener noreferrer">Open the draft in WordPress &rarr;</a> : null}
           </div>
 
           <nav className="pm-tabs" aria-label="Article views">

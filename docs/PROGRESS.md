@@ -359,6 +359,23 @@
 3. Vercel ডেপ্লয় হলে একটি নতুন আর্টিকেল লেখাও; Checks ট্যাবে "Publishing data" ভাঁজ খুলে দেখো: মেটা ~১১০–১৫০ অক্ষর কি না, লিংক-তালিকা মানচিত্রের সাথে মেলে কি না।
 4. GitHub Actions-এর ব্যর্থ ধাপের শেষ ২০–৩০ লাইন পাঠাও (CI এরর এখনো অজানা)।
 
+## Batch 16 — WordPress কানেকশন + ড্রাফট পাঠানো
+
+- `0021_wordpress_sites.sql`: টেবিল `sites` (https URL, WP ইউজার, এনক্রিপ্টেড Application Password; `ciphertext` কলাম `authenticated` পড়তে পারে না), `projects.site_id` FK, `articles.wp_site_id/wp_post_id/wp_edit_url/wp_pushed_at`; ফাংশন (শুধু service_role): `site_connect` (একই URL আবার = নতুন ক্রেডেনশিয়াল; সর্বোচ্চ ৫ সাইট), `site_record_test`, `site_delete`, `project_set_site`, `site_article_target` (প্রজেক্টের সাইট, নইলে ওয়ার্কস্পেসের একমাত্র সাইট; PM003 not ready, PM004 no site, 22023 একাধিক সাইট), `article_wp_saved`। `rls_0021.sql` ২৭/২৭ (দুই মোডেই)।
+- `src/modules/wordpress/`: `url.ts` (SSRF গার্ড: শুধু https, ক্রেডেনশিয়াল/কোয়েরি/অন্য পোর্ট/IP/লোকাল নাম নিষেধ, DNS-এর সব ঠিকানা পাবলিক হতে হবে), `secret.ts` (AES-256-GCM, একই `ENCRYPTION_KEY`; AAD = workspace + URL), `client.ts` (`testSite` = `GET users/me?context=edit`, `saveDraft` = `POST posts` (draft) বা বিদ্যমান পোস্ট আপডেট (স্ট্যাটাস বদলায় না; পোস্ট মুছে গেলে নতুন ড্রাফট); রিডাইরেক্ট অনুসরণ করে না; ২০ সেকেন্ড), `push.ts` (h1 বাদ, JSON-LD `<script>` যোগ, `<` এস্কেপড; মেটা = excerpt)।
+- UI: নতুন পেজ `/sites` (সংযোগ ফর্ম + টেস্ট + সরানো; ড্যাশবোর্ডে লিংক), আর্টিকেল-পেজে প্রধান বোতাম "Send to WordPress as draft" (পরে "Update the WordPress draft" + "Open the draft" লিংক)। দ্বিতীয়বার চাপলে একই পোস্ট আপডেট হয়, ডুপ্লিকেট হয় না।
+- খরচ: ড্রাফট পাঠানো বিনামূল্যে (কোনো দাম বসানো হয়নি)। পাবলিশ/শিডিউল এই ব্যাচে নেই; কিছু স্বয়ংক্রিয়ভাবে পাবলিশ হয় না।
+- সিদ্ধান্ত/সীমা: ইন্টারনাল লিংক এখনো পোস্টে ঢোকে না (লাইভ লিংক পাবলিশার ব্যাচে)। মেটা-ডেসক্রিপশন কোর WP-তে excerpt হিসেবে যায় (Yoast/RankMath ফিল্ড পরে companion plugin-এ)। যে ইউজারের `unfiltered_html` অধিকার নেই, WP JSON-LD স্ক্রিপ্ট ছেঁটে দেয়; কোড সেটা ধরে লাল নোটিস দেখায়।
+- যাচাই: SQL 0001–0021 সব সবুজ (`rls_0010` লোকাল ৩২/৩৭ আগের মতোই); ইউনিট wordpress ১১/১১, articles ১৮/১৮, review ১৪/১৪, next-step ৯/৯ (fetch মক করা); tsc পরিষ্কার (শুধু স্যান্ডবক্সের zod v3 অভিযোগ)। **যাচাই হয়নি:** আসল WordPress সাইটের বিরুদ্ধে কিছুই (টেস্ট-কানেকশন, ড্রাফট তৈরি, আপডেট, schema ছাঁটা-ধরা); আসল DNS/SSRF আচরণ; ব্রাউজারে /sites পেজ ও বোতাম; Vercel-এ `ENCRYPTION_KEY` থাকা ধরে নেওয়া হয়েছে।
+
+### মালিকের করণীয় (Batch 16), ক্রমানুসারে
+1. জিপ আপলোড (`docs/` সহ)।
+2. Supabase SQL Editor-এ `0021_wordpress_sites.sql` চালাও, তারপর `rls_0021.sql` — শেষ সারি `ALL CHECKS | 27 of 27 passed | true`।
+3. Vercel ডেপ্লয়ের পর WordPress-এ: Users → Profile → Application Passwords → নাম "PinMentor" → পাসওয়ার্ড কপি (ইউজার Editor/Administrator, সাইট https)।
+4. PinMentor-এ Dashboard → "WordPress →" (`/sites`) → ঠিকানা, ইউজার, পাসওয়ার্ড → "Connect and test"। ব্যর্থ হলে পেজে কারণ লেখা আসবে; না বুঝলে সেই লেখাটি পাঠাও।
+5. একটি `ready` আর্টিকেল খুলে "Send to WordPress as draft" চাপো; "Open the draft" দিয়ে WP-তে দেখো (শিরোনাম, লেখা, excerpt, স্লাগ)। আবার চাপলে একই ড্রাফট আপডেট হওয়া চাই।
+6. হলুদ/লাল নোটিস এলে (বিশেষ করে schema-ছাঁটা) জানাও। GitHub CI-এর ব্যর্থ ধাপের শেষ ২০–৩০ লাইনও এখনো দরকার।
+
 ## আসল রানের মাপা সংখ্যা (২০২৬-১০-২০) ও স্থগিত তালিকা
 **রান:** peinados, Auto, সীমা ৩০; মোট ৩৪৯ সেকেন্ড; kept 30, natural 204, trimmed 174; facets 10, values_total 148, expansion_calls 6, values_explored 5.
 **ধাপের সময় (সেকেন্ড):** S1+অপেক্ষা ≈ ৬৩ (টাইমলাইনে নেই: মোট − যোগফল), s2_expand 41, s3_normalize 0, s3_embed 22, s4_pairs 39, **s4_judge 121**, s5_classify 21, s6_silos 3, s7_titles 35, s8_links 1, s9_verify 3.

@@ -81,6 +81,7 @@ export default async function DashboardPage() {
                 <span className="pm-pill pm-pill-role">{w.role}</span>
                 {w.trialCredits === null ? <span>Trial credits are granted once your email is confirmed.</span> : null}
                 <Link href="/maps">Topical maps &rarr;</Link>
+                <Link href="/sites">WordPress &rarr;</Link>
               </div>
             </div>
             {w.trialCredits !== null ? (
