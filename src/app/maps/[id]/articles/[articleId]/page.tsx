@@ -15,7 +15,7 @@ const rowSchema = z.object({
   body_html: z.string().nullable(), word_count: z.number().nullable(), last_error: z.string().nullable(),
   qa: z.object({ verdict: z.string().optional(), checks: z.array(z.object({ id: z.string(), status: z.string(), summary: z.string() })).optional() }).passthrough(),
   review: z.unknown(), outline: z.object({ n: z.number() }).passthrough(),
-  meta_description: z.string().nullable(), schema_json: z.unknown(), wp_edit_url: z.string().nullable(), links: z.array(z.object({ role: z.string(), title: z.string(), slug: z.string() })).catch([]),
+  meta_description: z.string().nullable(), schema_json: z.unknown(), wp_edit_url: z.string().nullable(), wp_status: z.string().nullable(), wp_link: z.string().nullable(), links: z.array(z.object({ role: z.string(), title: z.string(), slug: z.string() })).catch([]),
 });
 const sectionRow = z.object({ kind: z.string(), idx: z.number(), content: z.unknown() });
 
@@ -34,6 +34,10 @@ const FLASH: Record<string, { text: string; bad: boolean }> = {
   notready: { text: "This article is not finished, so it cannot be translated yet.", bad: true },
   gone: { text: "Article not found.", bad: true },
   sent: { text: "Saved in WordPress as a draft. Open it there, check it, and publish when you are happy.", bad: false },
+  published: { text: "Published. The article is live on your site.", bad: false },
+  scheduled: { text: "Scheduled in WordPress. It goes live at the time you chose (your site's time).", bad: false },
+  blocked: { text: "This article has a serious problem (red). It cannot be published or scheduled from here. Open the Checks tab, fix it, or send it as a draft.", bad: true },
+  need_date: { text: "Choose a date and time to schedule.", bad: true },
   sent_noschema: { text: "Saved as a draft, but WordPress removed the schema (JSON-LD) script: this user lacks the unfiltered_html right. The text is fine; add schema with an SEO plugin or use an Administrator user.", bad: true },
   sent_unsaved: { text: "The draft was created in WordPress, but PinMentor could not record it. Pressing the button again may create a second draft.", bad: true },
   no_site: { text: "No WordPress site is connected yet. Connect one on the WordPress page, then come back.", bad: true },
@@ -67,7 +71,7 @@ export default async function ArticlePage({ params, searchParams }: { params: Pr
   // through the user's session: another workspace's article is simply not found (RLS)
   const res = await supabase
     .from("articles")
-    .select("id, map_run_id, status, title, slug, keyword, body_html, word_count, last_error, qa, review, outline, meta_description, schema_json, links, wp_edit_url")
+    .select("id, map_run_id, status, title, slug, keyword, body_html, word_count, last_error, qa, review, outline, meta_description, schema_json, links, wp_edit_url, wp_status, wp_link")
     .eq("id", ids.data.articleId)
     .eq("map_run_id", ids.data.id)
     .maybeSingle();
@@ -158,13 +162,43 @@ export default async function ArticlePage({ params, searchParams }: { params: Pr
             </div>
           </div>
 
-          <div className="pm-inline" style={{ gap: "0.75rem", margin: "0.75rem 0" }}>
-            <form action={sendToWordPress}>
-              <input type="hidden" name="run" value={art.map_run_id} />
-              <input type="hidden" name="article" value={art.id} />
-              <button type="submit" className={art.wp_edit_url ? "pm-btn" : "pm-btn pm-btn-primary"}>{art.wp_edit_url ? "Update the WordPress draft" : "Send to WordPress as draft"}</button>
-            </form>
-            {art.wp_edit_url ? <a href={art.wp_edit_url} target="_blank" rel="noopener noreferrer">Open the draft in WordPress &rarr;</a> : null}
+          <div className="pm-wpbox">
+            <p className="pm-muted" style={{ margin: 0 }}>
+              WordPress: {art.wp_status === "publish" ? "published" : art.wp_status === "future" ? "scheduled" : art.wp_status === "draft" ? "saved as a draft" : "not sent yet"}
+              {art.wp_link && art.wp_status === "publish" ? <> · <a href={art.wp_link} target="_blank" rel="noopener noreferrer">view the live article</a></> : null}
+              {art.wp_edit_url ? <> · <a href={art.wp_edit_url} target="_blank" rel="noopener noreferrer">open in WordPress</a></> : null}
+            </p>
+            <div className="pm-inline" style={{ gap: "0.75rem", margin: "0.6rem 0 0" }}>
+              {art.wp_status === "draft" || art.wp_status === "future" ? (
+                <form action={sendToWordPress}>
+                  <input type="hidden" name="run" value={art.map_run_id} />
+                  <input type="hidden" name="article" value={art.id} />
+                  <input type="hidden" name="mode" value="publish" />
+                  <button type="submit" className="pm-btn pm-btn-primary">Publish now</button>
+                </form>
+              ) : null}
+              <form action={sendToWordPress}>
+                <input type="hidden" name="run" value={art.map_run_id} />
+                <input type="hidden" name="article" value={art.id} />
+                <input type="hidden" name="mode" value="draft" />
+                <button type="submit" className={art.wp_status === null ? "pm-btn pm-btn-primary" : "pm-btn"}>
+                  {art.wp_status === null ? "Send to WordPress as draft" : art.wp_status === "publish" ? "Update the live article" : "Update the draft"}
+                </button>
+              </form>
+            </div>
+            {art.wp_status !== "publish" ? (
+              <details className="pm-more">
+                <summary>Schedule for later</summary>
+                <form action={sendToWordPress} className="pm-inline" style={{ gap: "0.6rem", marginTop: "0.5rem" }}>
+                  <input type="hidden" name="run" value={art.map_run_id} />
+                  <input type="hidden" name="article" value={art.id} />
+                  <input type="hidden" name="mode" value="schedule" />
+                  <input name="when" type="datetime-local" required className="pm-input" aria-label="Date and time on your site" style={{ width: "13rem" }} />
+                  <button type="submit" className="pm-btn">Schedule</button>
+                </form>
+                <p className="pm-muted">The time is your WordPress site&apos;s own time. Links to other articles are added only if they are already live; press “Update” later to add newer ones.</p>
+              </details>
+            ) : null}
           </div>
 
           <nav className="pm-tabs" aria-label="Article views">

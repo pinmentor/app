@@ -47,21 +47,27 @@ export async function testSite(s: WpSite, d: Deps = {}): Promise<{ ok: boolean; 
   return caps.edit_posts === true ? { ok: true, code: "ok" } : { ok: false, code: "cannot_write" };
 }
 
-export type DraftInput = { title: string; content: string; slug: string | null; excerpt: string | null };
-export type DraftResult = { id: number; editUrl: string; schemaKept: boolean; created: boolean };
+export type PostInput = { title: string; content: string; slug: string | null; excerpt: string | null };
+export type PostMode = { kind: "keep" } | { kind: "publish" } | { kind: "future"; date: string };
+export type PostResult = { id: number; editUrl: string; link: string; status: "draft" | "publish" | "future"; schemaKept: boolean; created: boolean };
+
+const statusOf = (v: unknown): PostResult["status"] => (v === "publish" || v === "future" ? v : "draft");
 
 /**
- * Creates a draft, or updates the post stored earlier (status is left as it is on update, so a post the user already published is not
- * turned back into a draft). If the stored post no longer exists (404) a new draft is created. `schemaKept` tells whether WordPress
- * kept the JSON-LD script (it strips scripts for users without the unfiltered_html right).
+ * Creates a post (as a draft unless the mode says otherwise), or updates the post stored earlier. `keep` never changes the status of
+ * an existing post (a post the user already published is not turned back into a draft). `publish` and `future` set it explicitly;
+ * `date` is the site's local time ("YYYY-MM-DDTHH:mm:ss"), WordPress converts it. If the stored post no longer exists (404) a new
+ * one is created. `schemaKept` tells whether WordPress kept the JSON-LD script (it strips scripts for users without unfiltered_html).
  */
-export async function saveDraft(s: WpSite, input: DraftInput, existingId: number | null, d: Deps = {}): Promise<WpResult<DraftResult>> {
-  const fields = { title: input.title, content: input.content, ...(input.slug ? { slug: input.slug } : {}), ...(input.excerpt ? { excerpt: input.excerpt } : {}) };
+export async function savePost(s: WpSite, input: PostInput, existingId: number | null, mode: PostMode, d: Deps = {}): Promise<WpResult<PostResult>> {
+  const base = { title: input.title, content: input.content, ...(input.slug ? { slug: input.slug } : {}), ...(input.excerpt ? { excerpt: input.excerpt } : {}) };
+  const explicit = mode.kind === "publish" ? { status: "publish" } : mode.kind === "future" ? { status: "future", date: mode.date } : {};
+  const fresh = { ...base, ...(mode.kind === "keep" ? { status: "draft" } : explicit) };
   let created = existingId === null;
-  let r = existingId !== null ? await call(s, "POST", `posts/${existingId}`, fields, d) : await call(s, "POST", "posts", { ...fields, status: "draft" }, d);
+  let r = existingId !== null ? await call(s, "POST", `posts/${existingId}`, { ...base, ...explicit }, d) : await call(s, "POST", "posts", fresh, d);
   if (r.ok && existingId !== null && r.data.status === 404) {
     created = true;
-    r = await call(s, "POST", "posts", { ...fields, status: "draft" }, d);
+    r = await call(s, "POST", "posts", fresh, d);
   }
   if (!r.ok) return r;
   const { status, json } = r.data;
@@ -69,5 +75,6 @@ export async function saveDraft(s: WpSite, input: DraftInput, existingId: number
   if (status === 404) return { ok: false, code: "no_rest_api" };
   if (status < 200 || status >= 300 || !isObj(json) || typeof json.id !== "number") return { ok: false, code: `http_${status}` };
   const raw = isObj(json.content) && typeof json.content.raw === "string" ? json.content.raw : "";
-  return { ok: true, data: { id: json.id, editUrl: `${s.baseUrl}/wp-admin/post.php?post=${json.id}&action=edit`, schemaKept: !input.content.includes("application/ld+json") || raw.includes("application/ld+json"), created } };
+  const link = typeof json.link === "string" && json.link.startsWith("https://") ? json.link : "";
+  return { ok: true, data: { id: json.id, editUrl: `${s.baseUrl}/wp-admin/post.php?post=${json.id}&action=edit`, link, status: statusOf(json.status), schemaKept: !input.content.includes("application/ld+json") || raw.includes("application/ld+json"), created } };
 }
