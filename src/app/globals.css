@@ -1768,6 +1768,28 @@
   .pm-pin p {
     margin: 0.3rem 0;
   }
+  .pm-editform {
+    display: grid;
+    gap: 0.9rem;
+  }
+  .pm-editform textarea.pm-input {
+    min-height: 4rem;
+    resize: vertical;
+    font: inherit;
+    line-height: 1.5;
+  }
+  .pm-editgroup {
+    display: grid;
+    gap: 0.6rem;
+    margin: 0;
+    padding: 0.8rem 1rem 1rem;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+  }
+  .pm-editgroup legend {
+    padding: 0 0.4rem;
+    font-weight: 700;
+  }
 
 }
 

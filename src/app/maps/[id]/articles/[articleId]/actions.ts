@@ -9,6 +9,11 @@ import { savePost, type PostMode } from "@/modules/wordpress/client";
 import { excerptOf, postContent, relatedHtml } from "@/modules/wordpress/push";
 import { decryptSitePassword } from "@/modules/wordpress/secret";
 import type { SchemaNode } from "@/modules/articles/publish";
+import type { RelatedLink } from "@/modules/articles/publish";
+import { parseEditForm, partsOfEdit, rebuildAfterEdit, sectionRows } from "@/modules/articles/edit";
+import { storedOutlineSchema } from "@/modules/articles/prompts";
+import type { ArticleParts } from "@/modules/articles/render";
+import { storedReviewSchema } from "@/modules/articles/review";
 
 /**
  * Ask for a translation gloss of a ready article. The user is authenticated here (session); article_gloss_request (0019) re-checks
@@ -142,4 +147,60 @@ export async function setPinStatus(formData: FormData) {
   revalidatePath(`/maps/${f.data.run}/articles/${f.data.article}`);
   if (res.error) console.error("pin status failed", res.error.code ?? "no_code");
   redirect(pinBack(f.data.run, f.data.article, res.error ? "error" : "pin_saved"));
+}
+
+// ---------------------------------------------------------------------------
+// Edit the text of a finished article (Batch 20). Free. The AI language review is not re-run; the QA says so.
+// ---------------------------------------------------------------------------
+const editIds = z.object({ run: z.string().uuid(), article: z.string().uuid() });
+const sectionRowsSchema = z.array(z.object({ kind: z.string(), idx: z.number(), content: z.unknown() }));
+const planRow = z.object({ target_words: z.number().int(), slug: z.string().nullable() });
+
+export async function saveArticleEdit(formData: FormData) {
+  const ids = editIds.safeParse({ run: formData.get("run"), article: formData.get("article") });
+  if (!ids.success) redirect("/maps");
+  const back = (flash: string, field = "") => `/maps/${ids.data.run}/articles/${ids.data.article}?tab=edit&flash=${flash}${field ? `&field=${encodeURIComponent(field)}` : ""}`;
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect(`/login?next=${encodeURIComponent(`/maps/${ids.data.run}/articles/${ids.data.article}`)}`);
+
+  // the session client only sees articles of the user's own workspace (RLS)
+  const own = await supabase.from("articles").select("id").eq("id", ids.data.article).eq("map_run_id", ids.data.run).maybeSingle();
+  if (!own.data) redirect(back("gone"));
+  const sb = createAdminClient();
+  const [art, secs] = await Promise.all([
+    sb.from("articles").select("status, locale, slug, outline, review, links, plan_item_id, title").eq("id", ids.data.article).maybeSingle(),
+    sb.from("article_sections").select("kind, idx, content").eq("article_id", ids.data.article),
+  ]);
+  const outline = storedOutlineSchema.safeParse(art.data?.outline);
+  const rows = sectionRowsSchema.safeParse(secs.data ?? []);
+  if (art.error || !art.data || art.data.status !== "ready" || !outline.success || !rows.success) redirect(back("edit_notready"));
+  const plan = planRow.safeParse((await sb.from("plan_items").select("target_words, slug").eq("id", art.data.plan_item_id).maybeSingle()).data);
+  if (!plan.success) redirect(back("error"));
+
+  const get = (k: string) => String(formData.get(k) ?? "");
+  const parsed = parseEditForm(get, outline.data.n, outline.data.faq.length);
+  if (!parsed.ok) redirect(back("edit_invalid", parsed.error.message));  // the message travels in the `field` parameter (plain text, shown escaped by React)
+  const e = parsed.value;
+
+  const saved = await sb.rpc("article_edit_save", { p_user: user.id, p_article: ids.data.article, p_title: e.title, p_sections: sectionRows(e) });
+  if (saved.error) {
+    console.error("article edit failed", saved.error.code ?? "no_code");
+    redirect(back(saved.error.code === "PM003" ? "edit_notready" : "error"));
+  }
+
+  const base: ArticleParts = {
+    title: e.title, locale: art.data.locale as ArticleParts["locale"], highlights: outline.data.highlights,
+    intro: { paragraphs: e.intro }, items: e.items, faq: { items: e.faq }, conclusion: { paragraphs: e.conclusion },
+  };
+  const review = storedReviewSchema.safeParse(art.data.review);
+  const links = (Array.isArray(art.data.links) ? art.data.links : []) as RelatedLink[];
+  const built = rebuildAfterEdit({ parts: partsOfEdit(base, e), slug: art.data.slug ?? plan.data.slug, n: outline.data.n, targetWords: plan.data.target_words, meta: e.meta, links, hadReview: review.success && review.data.status === "done", lastVerdict: review.success ? (review.data.verdict ?? null) : null });
+  const up = await sb.from("articles").update({ body_html: built.html, qa: built.qa, word_count: built.words, meta_description: built.meta, schema_json: built.schema, stats: { qa_verdict: built.qa.verdict, edited: true } }).eq("id", ids.data.article).eq("status", "ready");
+  revalidatePath(`/maps/${ids.data.run}/articles/${ids.data.article}`);
+  if (up.error) {
+    console.error("article edit rebuild failed", up.error.code ?? "no_code");
+    redirect(back("edit_half"));
+  }
+  redirect(`/maps/${ids.data.run}/articles/${ids.data.article}?flash=edited`);
 }

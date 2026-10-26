@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { GLOSS_LANGS, glossRowCount, isGlossLang, type GlossLang } from "@/modules/articles/gloss";
 import { lightOf, storedReviewSchema, type Light } from "@/modules/articles/review";
 import { AppFrame } from "../../../chrome";
-import { requestGloss, requestPins, sendToWordPress, setPinStatus } from "./actions";
+import { requestGloss, requestPins, saveArticleEdit, sendToWordPress, setPinStatus } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Article — PinMentor" };
@@ -14,7 +14,7 @@ const rowSchema = z.object({
   id: z.string().uuid(), map_run_id: z.string().uuid(), status: z.string(), title: z.string().nullable(), slug: z.string().nullable(), keyword: z.string(),
   body_html: z.string().nullable(), word_count: z.number().nullable(), last_error: z.string().nullable(),
   qa: z.object({ verdict: z.string().optional(), checks: z.array(z.object({ id: z.string(), status: z.string(), summary: z.string() })).optional() }).passthrough(),
-  review: z.unknown(), outline: z.object({ n: z.number() }).passthrough(),
+  review: z.unknown(), outline: z.object({ n: z.number(), faq: z.array(z.unknown()).optional() }).passthrough(),
   meta_description: z.string().nullable(), schema_json: z.unknown(), wp_edit_url: z.string().nullable(), wp_status: z.string().nullable(), wp_link: z.string().nullable(), links: z.array(z.object({ role: z.string(), title: z.string(), slug: z.string() })).catch([]),
 });
 const pinRow = z.object({ id: z.string().uuid(), position: z.number(), angle: z.string(), title: z.string(), description: z.string(), alt: z.string(), keywords: z.array(z.string()), gloss_bn: z.string().nullable(), checks: z.object({ status: z.string().optional(), notes: z.array(z.string()).optional() }).passthrough(), status: z.string() });
@@ -42,6 +42,10 @@ const FLASH: Record<string, { text: string; bad: boolean }> = {
   pins_started: { text: "Writing the pin texts. Refresh in a minute; they appear here as drafts.", bad: false },
   pins_exist: { text: "This article already has pin texts. Reject them all to get a fresh set.", bad: true },
   pin_saved: { text: "Saved.", bad: false },
+  edited: { text: "Saved. The article and its checks were rebuilt from your text. Translations were cleared (they described the old text); press Update to send the change to WordPress.", bad: false },
+  edit_notready: { text: "This article cannot be edited right now (it is not finished).", bad: true },
+  edit_invalid: { text: "Not saved: a field is not valid.", bad: true },
+  edit_half: { text: "Your text was saved, but the checks could not be rebuilt. Open the Edit tab and save once more.", bad: true },
   sent_noschema: { text: "Saved as a draft, but WordPress removed the schema (JSON-LD) script: this user lacks the unfiltered_html right. The text is fine; add schema with an SEO plugin or use an Administrator user.", bad: true },
   sent_unsaved: { text: "The draft was created in WordPress, but PinMentor could not record it. Pressing the button again may create a second draft.", bad: true },
   no_site: { text: "No WordPress site is connected yet. Connect one on the WordPress page, then come back.", bad: true },
@@ -53,6 +57,7 @@ const FLASH: Record<string, { text: string; bad: boolean }> = {
 const TABS = [
   { key: "read", label: "Read" },
   { key: "checks", label: "Checks" },
+  { key: "edit", label: "Edit" },
   { key: "translation", label: "Translation" },
   { key: "pins", label: "Pins" },
 ] as const;
@@ -62,7 +67,7 @@ type Block = { label: string; original: string[]; translated: string[] | null };
 const arr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
 const obj = (v: unknown): Record<string, unknown> => (typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {});
 
-export default async function ArticlePage({ params, searchParams }: { params: Promise<{ id: string; articleId: string }>; searchParams: Promise<{ tab?: string; lang?: string; flash?: string; code?: string }> }) {
+export default async function ArticlePage({ params, searchParams }: { params: Promise<{ id: string; articleId: string }>; searchParams: Promise<{ tab?: string; lang?: string; flash?: string; code?: string; field?: string }> }) {
   const p = await params;
   const ids = z.object({ id: z.string().uuid(), articleId: z.string().uuid() }).safeParse(p);
   if (!ids.success) notFound();
@@ -131,6 +136,10 @@ export default async function ArticlePage({ params, searchParams }: { params: Pr
   }
   const need = glossRowCount(art.outline.n);
 
+  const editRes = ready && tab === "edit" ? await supabase.from("article_sections").select("kind, idx, content").eq("article_id", art.id).order("idx") : null;
+  const editSec = z.array(sectionRow).safeParse(editRes?.data ?? []);
+  const E = editSec.success ? editSec.data : [];
+  const es = (kind: string, idx = 0) => obj(E.find((x) => x.kind === kind && x.idx === idx)?.content);
   const pinRes = ready && tab === "pins" ? await supabase.from("pins").select("id, position, angle, title, description, alt, keywords, gloss_bn, checks, status").eq("article_id", art.id).order("position") : null;
   const pins = z.array(pinRow).safeParse(pinRes?.data ?? []);
   const pinList = pins.success ? pins.data : [];
@@ -153,6 +162,7 @@ export default async function ArticlePage({ params, searchParams }: { params: Pr
       {flash ? (
         <p className={flash.bad ? "pm-note pm-note-bad" : "pm-note"}>
           {flash.text}
+          {sp.flash === "edit_invalid" && sp.field ? ` ${sp.field.slice(0, 200)}` : ""}
           {sp.flash === "wp_failed" && sp.code ? ` (${sp.code.slice(0, 40).replace(/[^a-z0-9_]/gi, "")})` : ""}
           {sp.flash === "no_site" || sp.flash === "site_choice" || sp.flash === "wp_failed" ? <> <Link href="/sites">WordPress page &rarr;</Link></> : null}
         </p>
@@ -288,6 +298,44 @@ export default async function ArticlePage({ params, searchParams }: { params: Pr
                 {rv ? `Language read by ${rv.model ?? "a second model"}${rv.cross_model === false ? " (the same company that wrote it, so a weaker check)" : ""}. ` : ""}
                 These checks lower the risk; they do not prove the text is right. Read the translation before you use the article.
               </p>
+            </section>
+          ) : null}
+
+          {tab === "edit" ? (
+            <section>
+              <p className="pm-muted">Fix the text yourself. Separate paragraphs with a blank line; bullets one per line. When you save, the article and its mechanical checks are rebuilt. The AI language review is <b>not</b> repeated, so the Checks tab will say the text was edited. Translations are cleared.</p>
+              {E.length === 0 ? <p className="pm-note pm-note-bad">The stored text could not be loaded.</p> : (
+                <form action={saveArticleEdit} className="pm-editform">
+                  <input type="hidden" name="run" value={art.map_run_id} />
+                  <input type="hidden" name="article" value={art.id} />
+                  <label className="pm-field">Title<input name="title" defaultValue={art.title ?? ""} className="pm-input" required minLength={8} maxLength={160} /></label>
+                  <label className="pm-field">Meta description (search result text, aim for 70 to 155 characters)<textarea name="meta" defaultValue={art.meta_description ?? ""} className="pm-input" rows={2} maxLength={400} /></label>
+                  <label className="pm-field">Introduction<textarea name="intro" defaultValue={arr(es("intro").paragraphs).join("\n\n")} className="pm-input" rows={6} required /></label>
+                  {Array.from({ length: art.outline.n }, (_, i) => {
+                    const o = es("item", i);
+                    return (
+                      <fieldset key={i} className="pm-editgroup">
+                        <legend>Item {i + 1}</legend>
+                        <label className="pm-field">Heading<input name={`item_${i}_heading`} defaultValue={String(o.heading ?? "")} className="pm-input" required /></label>
+                        <label className="pm-field">Text<textarea name={`item_${i}_paras`} defaultValue={arr(o.paragraphs).join("\n\n")} className="pm-input" rows={6} required /></label>
+                        <label className="pm-field">Bullets (optional)<textarea name={`item_${i}_bullets`} defaultValue={arr(o.bullets).join("\n")} className="pm-input" rows={3} /></label>
+                      </fieldset>
+                    );
+                  })}
+                  {Array.from({ length: art.outline.faq?.length ?? 0 }, (_, i) => {
+                    const q = (Array.isArray(es("faq").items) ? (es("faq").items as { question?: string; answer?: string }[]) : [])[i];
+                    return (
+                      <fieldset key={`f${i}`} className="pm-editgroup">
+                        <legend>Question {i + 1}</legend>
+                        <label className="pm-field">Question<input name={`faq_${i}_q`} defaultValue={q?.question ?? ""} className="pm-input" required /></label>
+                        <label className="pm-field">Answer<textarea name={`faq_${i}_a`} defaultValue={q?.answer ?? ""} className="pm-input" rows={3} required /></label>
+                      </fieldset>
+                    );
+                  })}
+                  <label className="pm-field">Conclusion<textarea name="conclusion" defaultValue={arr(es("conclusion").paragraphs).join("\n\n")} className="pm-input" rows={4} required /></label>
+                  <button type="submit" className="pm-btn pm-btn-primary">Save changes</button>
+                </form>
+              )}
             </section>
           ) : null}
 
