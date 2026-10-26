@@ -5,6 +5,7 @@ import { callLlm } from "@/modules/llm/client";
 import { JobError, type JobContext, type JobHandler } from "./types";
 import { mapHandlers } from "@/modules/topical-map/stages";
 import { articleHandlers } from "@/modules/articles/handlers";
+import { pinHandlers } from "@/modules/pins/handlers";
 
 export { JobError };
 export type { JobContext, JobHandler };
@@ -45,6 +46,7 @@ export const handlers: Record<string, JobHandler> = {
 
   // Article writer (outline -> sections -> assemble): src/modules/articles/handlers.ts
   ...articleHandlers,
+  ...pinHandlers,
 };
 
 /** Maps any thrown value to the fields job_fail() needs. Messages are sanitised: no prompts, payloads or keys. */

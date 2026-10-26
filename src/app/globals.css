@@ -1754,6 +1754,20 @@
     border-radius: 14px;
     background: var(--surface);
   }
+  .pm-pin {
+    margin: 0 0 0.9rem;
+    padding: 0.9rem 1.1rem;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--surface);
+  }
+  .pm-pin h3 {
+    margin: 0.35rem 0 0.2rem;
+    font-size: 1.1rem;
+  }
+  .pm-pin p {
+    margin: 0.3rem 0;
+  }
 
 }
 

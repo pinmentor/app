@@ -24,7 +24,7 @@ export function wordsPerItem(targetWords: number, n: number): number {
   return Math.max(60, Math.round((targetWords - FIXED_WORDS) / Math.max(1, n)));
 }
 
-const RULES =
+export const RULES =
   "Hard rules: write everything in the requested language and regional variant. Never mention prices, discounts, costs or currencies. Never write a year. " +
   "Never invent personal experience or testing (no 'I tried', 'in my experience', 'we tested'). No statistics, percentages, studies, quotes or brand names. " +
   "No medical or health claims; for hair or skin damage topics stay with general, harmless care advice. Do not mention that you are an AI. " +

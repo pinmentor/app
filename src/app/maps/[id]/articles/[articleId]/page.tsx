@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { GLOSS_LANGS, glossRowCount, isGlossLang, type GlossLang } from "@/modules/articles/gloss";
 import { lightOf, storedReviewSchema, type Light } from "@/modules/articles/review";
 import { AppFrame } from "../../../chrome";
-import { requestGloss, sendToWordPress } from "./actions";
+import { requestGloss, requestPins, sendToWordPress, setPinStatus } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Article — PinMentor" };
@@ -17,6 +17,7 @@ const rowSchema = z.object({
   review: z.unknown(), outline: z.object({ n: z.number() }).passthrough(),
   meta_description: z.string().nullable(), schema_json: z.unknown(), wp_edit_url: z.string().nullable(), wp_status: z.string().nullable(), wp_link: z.string().nullable(), links: z.array(z.object({ role: z.string(), title: z.string(), slug: z.string() })).catch([]),
 });
+const pinRow = z.object({ id: z.string().uuid(), position: z.number(), angle: z.string(), title: z.string(), description: z.string(), alt: z.string(), keywords: z.array(z.string()), gloss_bn: z.string().nullable(), checks: z.object({ status: z.string().optional(), notes: z.array(z.string()).optional() }).passthrough(), status: z.string() });
 const sectionRow = z.object({ kind: z.string(), idx: z.number(), content: z.unknown() });
 
 /** Own stylesheet for the preview: the article HTML is generated and escaped by our code, and shown in a sandbox with no scripts. */
@@ -38,6 +39,9 @@ const FLASH: Record<string, { text: string; bad: boolean }> = {
   scheduled: { text: "Scheduled in WordPress. It goes live at the time you chose (your site's time).", bad: false },
   blocked: { text: "This article has a serious problem (red). It cannot be published or scheduled from here. Open the Checks tab, fix it, or send it as a draft.", bad: true },
   need_date: { text: "Choose a date and time to schedule.", bad: true },
+  pins_started: { text: "Writing the pin texts. Refresh in a minute; they appear here as drafts.", bad: false },
+  pins_exist: { text: "This article already has pin texts. Reject them all to get a fresh set.", bad: true },
+  pin_saved: { text: "Saved.", bad: false },
   sent_noschema: { text: "Saved as a draft, but WordPress removed the schema (JSON-LD) script: this user lacks the unfiltered_html right. The text is fine; add schema with an SEO plugin or use an Administrator user.", bad: true },
   sent_unsaved: { text: "The draft was created in WordPress, but PinMentor could not record it. Pressing the button again may create a second draft.", bad: true },
   no_site: { text: "No WordPress site is connected yet. Connect one on the WordPress page, then come back.", bad: true },
@@ -50,6 +54,7 @@ const TABS = [
   { key: "read", label: "Read" },
   { key: "checks", label: "Checks" },
   { key: "translation", label: "Translation" },
+  { key: "pins", label: "Pins" },
 ] as const;
 type Tab = (typeof TABS)[number]["key"];
 
@@ -126,6 +131,9 @@ export default async function ArticlePage({ params, searchParams }: { params: Pr
   }
   const need = glossRowCount(art.outline.n);
 
+  const pinRes = ready && tab === "pins" ? await supabase.from("pins").select("id, position, angle, title, description, alt, keywords, gloss_bn, checks, status").eq("article_id", art.id).order("position") : null;
+  const pins = z.array(pinRow).safeParse(pinRes?.data ?? []);
+  const pinList = pins.success ? pins.data : [];
   const checks = art.qa.checks ?? [];
   const flagged = checks.filter((c) => c.status !== "pass");
   const passed = checks.filter((c) => c.status === "pass");
@@ -280,6 +288,66 @@ export default async function ArticlePage({ params, searchParams }: { params: Pr
                 {rv ? `Language read by ${rv.model ?? "a second model"}${rv.cross_model === false ? " (the same company that wrote it, so a weaker check)" : ""}. ` : ""}
                 These checks lower the risk; they do not prove the text is right. Read the translation before you use the article.
               </p>
+            </section>
+          ) : null}
+
+          {tab === "pins" ? (
+            <section>
+              {pinList.length === 0 ? (
+                <div className="pm-empty">
+                  <h2>Pin texts for Pinterest</h2>
+                  <p>Writes 5 different pin titles and descriptions for this article, each with its own angle, plus a Bengali meaning so you can judge them. Images and posting come in a later step. Free.</p>
+                  <form action={requestPins}>
+                    <input type="hidden" name="run" value={art.map_run_id} />
+                    <input type="hidden" name="article" value={art.id} />
+                    <input type="hidden" name="count" value="5" />
+                    <button type="submit" className="pm-btn pm-btn-primary">Create 5 pin texts</button>
+                  </form>
+                  <p className="pm-muted">If you just pressed it, wait a minute and refresh.</p>
+                </div>
+              ) : (
+                <>
+                  <p className="pm-muted">{pinList.filter((x) => x.status === "approved").length} of {pinList.length} approved. Read each one, approve the good ones, reject the rest. Reject all to get a fresh set.</p>
+                  {pinList.map((x) => (
+                    <article key={x.id} className="pm-pin">
+                      <div className="pm-inline" style={{ gap: "0.5rem", justifyContent: "space-between" }}>
+                        <span className="pm-muted">Pin {x.position}{x.angle ? ` · ${x.angle}` : ""}</span>
+                        <span className={`pm-pill ${x.status === "approved" ? "pm-pill-succeeded" : x.status === "rejected" ? "pm-pill-dead" : "pm-pill-role"}`}>{x.status}</span>
+                      </div>
+                      <h3>{x.title}</h3>
+                      <p>{x.description}</p>
+                      {x.gloss_bn ? <p className="pm-muted">বাংলা: {x.gloss_bn}</p> : null}
+                      {(x.checks.notes ?? []).length > 0 ? <p className="pm-note pm-note-bad">{(x.checks.notes ?? []).join(" · ")}</p> : null}
+                      <details className="pm-more">
+                        <summary>Image description and keywords</summary>
+                        <p>{x.alt || "—"}</p>
+                        <p className="pm-muted">{x.keywords.join(", ") || "—"}</p>
+                      </details>
+                      <div className="pm-inline" style={{ gap: "0.5rem" }}>
+                        {(["approved", "rejected"] as const).map((st) => (
+                          <form key={st} action={setPinStatus}>
+                            <input type="hidden" name="run" value={art.map_run_id} />
+                            <input type="hidden" name="article" value={art.id} />
+                            <input type="hidden" name="pin" value={x.id} />
+                            <input type="hidden" name="status" value={x.status === st ? "draft" : st} />
+                            <button type="submit" className={st === "approved" && x.status !== "approved" ? "pm-btn pm-btn-primary pm-btn-sm" : "pm-btn pm-btn-sm"}>
+                              {st === "approved" ? (x.status === "approved" ? "Undo approve" : "Approve") : x.status === "rejected" ? "Undo reject" : "Reject"}
+                            </button>
+                          </form>
+                        ))}
+                      </div>
+                    </article>
+                  ))}
+                  {pinList.every((x) => x.status === "rejected") ? (
+                    <form action={requestPins}>
+                      <input type="hidden" name="run" value={art.map_run_id} />
+                      <input type="hidden" name="article" value={art.id} />
+                      <input type="hidden" name="count" value="5" />
+                      <button type="submit" className="pm-btn pm-btn-primary">Write a fresh set of 5</button>
+                    </form>
+                  ) : null}
+                </>
+              )}
             </section>
           ) : null}
 

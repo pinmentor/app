@@ -105,3 +105,41 @@ export async function sendToWordPress(formData: FormData) {
   }
   redirect(back(!r.data.schemaKept ? "sent_noschema" : r.data.status === "publish" ? "published" : r.data.status === "future" ? "scheduled" : "sent"));
 }
+
+// ---------------------------------------------------------------------------
+// Pin texts (Batch 19): ask for a set of Pinterest texts, approve or reject each pin. Free; no image and no posting yet.
+// ---------------------------------------------------------------------------
+const pinReq = z.object({ run: z.string().uuid(), article: z.string().uuid(), count: z.coerce.number().int().min(1).max(10).default(5) });
+const pinSet = z.object({ run: z.string().uuid(), article: z.string().uuid(), pin: z.string().uuid(), status: z.enum(["approved", "rejected", "draft"]) });
+const pinBack = (run: string, article: string, flash: string) => `/maps/${run}/articles/${article}?tab=pins&flash=${flash}`;
+
+async function pinUser(run: string, article: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect(`/login?next=${encodeURIComponent(`/maps/${run}/articles/${article}`)}`);
+  return user;
+}
+
+export async function requestPins(formData: FormData) {
+  const f = pinReq.safeParse({ run: formData.get("run"), article: formData.get("article"), count: formData.get("count") ?? 5 });
+  if (!f.success) redirect("/maps");
+  const user = await pinUser(f.data.run, f.data.article);
+  const res = await createAdminClient().rpc("pin_copy_request", { p_user: user.id, p_article: f.data.article, p_count: f.data.count });
+  revalidatePath(`/maps/${f.data.run}/articles/${f.data.article}`);
+  if (res.error) {
+    console.error("pin request failed", res.error.code ?? "no_code");
+    const c = res.error.code;
+    redirect(pinBack(f.data.run, f.data.article, c === "PM003" ? (String(res.error.message).includes("pins_exist") ? "pins_exist" : "notready") : c === "42501" || c === "PM004" ? "gone" : "error"));
+  }
+  redirect(pinBack(f.data.run, f.data.article, "pins_started"));
+}
+
+export async function setPinStatus(formData: FormData) {
+  const f = pinSet.safeParse({ run: formData.get("run"), article: formData.get("article"), pin: formData.get("pin"), status: formData.get("status") });
+  if (!f.success) redirect("/maps");
+  const user = await pinUser(f.data.run, f.data.article);
+  const res = await createAdminClient().rpc("pin_set_status", { p_user: user.id, p_pin: f.data.pin, p_status: f.data.status });
+  revalidatePath(`/maps/${f.data.run}/articles/${f.data.article}`);
+  if (res.error) console.error("pin status failed", res.error.code ?? "no_code");
+  redirect(pinBack(f.data.run, f.data.article, res.error ? "error" : "pin_saved"));
+}
