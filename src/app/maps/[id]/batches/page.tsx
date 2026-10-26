@@ -9,7 +9,7 @@ import { NextStepCard } from "../../next-step-card";
 import { loadMap, nextInputOf, suggestFor } from "../load";
 import { progressCounts } from "@/modules/articles/progress";
 import { lightOf } from "@/modules/articles/review";
-import { changeBatch, createAutoBatches, createManualBatch, runBatch, stopBatch } from "./actions";
+import { changeBatch, createAutoBatches, createManualBatch, runBatch, sendBatchToWordPress, stopBatch } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Batches — PinMentor" };
@@ -23,6 +23,9 @@ const FLASH: Record<string, { text: string; bad: boolean }> = {
   norate: { text: "Writing cannot start yet: the price for writing an article has not been set. It is set by the PinMentor team; nothing was spent.", bad: true },
   credits: { text: "Not enough credits to write this batch. The credits needed are held when it starts; nothing was spent. Add credits or take some articles out of the batch.", bad: true },
   error: { text: "Something went wrong. Nothing was changed; please try again.", bad: true },
+  wp_invalid: { text: "Not queued: check the start date, the number per day and the time window.", bad: true },
+  wp_date: { text: "Not queued: choose a start date that is today or later.", bad: true },
+  wp_window: { text: "Not queued: the time window is too short for that many articles per day (at least 10 minutes each).", bad: true },
 };
 const PILL: Record<string, string> = { planned: "", running: "pm-pill-running", completed: "pm-pill-succeeded", canceled: "pm-pill-canceled" };
 const STATUS_TEXT: Record<string, string> = { planned: "ready to write", running: "writing", completed: "done", canceled: "cancelled" };
@@ -36,6 +39,14 @@ function flashOf(code: string | undefined): { text: string; bad: boolean } | und
     const k = Number(run[2]);
     return { text: run[1] === "started" ? `Writing started for ${k} article${k === 1 ? "" : "s"}. Refresh this page to see progress; you can leave and come back.` : `Writing stopped. ${k} unfinished article${k === 1 ? " was" : "s were"} cancelled and approved again; finished articles are kept.`, bad: false };
   }
+  const q = /^wp_queued-(\d+)-(\d+)$/.exec(code);
+  if (q) {
+    const k = Number(q[1]);
+    const s = Number(q[2]);
+    return { text: `Sending ${k} article${k === 1 ? "" : "s"} to WordPress in the background${s ? ` (${s} left out: red, or already sent)` : ""}. Refresh in a minute to see the result for each one.`, bad: false };
+  }
+  const nn = /^wp_none-(\d+)$/.exec(code);
+  if (nn) return { text: "Nothing to send: every ready article here is red or already sent to WordPress.", bad: true };
   const m = /^(created|canceled|removed)-(\d+)$/.exec(code);
   if (!m) return undefined;
   const n = Number(m[2]);
@@ -66,6 +77,9 @@ export default async function BatchesPage({ params, searchParams }: { params: Pr
   const open = map.batches.filter((b) => b.status !== "canceled");
   const canceled = map.batches.filter((b) => b.status === "canceled");
   const flash = flashOf(sp.flash);
+  const wpRes = await supabase.from("articles").select("id, wp_status, wp_when, wp_error").eq("map_run_id", map.run.id);
+  const wpOf = new Map(((wpRes.data ?? []) as { id: string; wp_status: string | null; wp_when: string | null; wp_error: string | null }[]).map((x) => [x.id, x]));
+  const today = new Date().toISOString().slice(0, 10);
   const firstOfSilo = new Set<string>();
 
   return (
@@ -89,8 +103,12 @@ export default async function BatchesPage({ params, searchParams }: { params: Pr
             const artOf = new Map(arts.map((a) => [a.plan_item_id, a]));
             // a finished or running batch lists its articles (some items have left the batch, so show the articles themselves)
             const rows = planned ? mine.map((i) => ({ id: i.id, keyword: i.keyword, title: i.title, status: i.status })) : arts.map((a) => { const it = map.items.find((x) => x.id === a.plan_item_id); return { id: a.plan_item_id, keyword: it?.keyword ?? "", title: it?.title ?? null, status: a.status }; });
+            const readyArts = arts.filter((x) => x.status === "ready");
+            const notSent = readyArts.filter((x) => !wpOf.get(x.id)?.wp_status).length;
+            const greens = readyArts.filter((x) => x.qa.verdict !== "fail" && ["draft", undefined, null].includes(wpOf.get(x.id)?.wp_status)).length;
             return (
-              <form key={b.id} action={changeBatch} className="pm-batchcard">
+              <div key={b.id}>
+              <form action={changeBatch} className="pm-batchcard">
                 <input type="hidden" name="run" value={map.run.id} />
                 <input type="hidden" name="batch" value={b.id} />
                 <div className="pm-batchcard-head">
@@ -122,6 +140,7 @@ export default async function BatchesPage({ params, searchParams }: { params: Pr
                                 {a?.status === "ready" ? (
                                   <>
                                     <span className={`pm-pill ${LIGHT_PILL[l]}`}>{l}</span> <Link href={`/maps/${map.run.id}/articles/${a.id}`}>Read</Link>
+                                    {(() => { const w = wpOf.get(a.id); return w?.wp_error ? <span className="pm-muted"> · WP failed ({w.wp_error})</span> : w?.wp_status ? <span className="pm-muted"> · WP {w.wp_status === "publish" ? "published" : w.wp_status === "future" ? `scheduled${w.wp_when ? ` ${w.wp_when.replace("T", " ")}` : ""}` : "draft"}</span> : null; })()}
                                   </>
                                 ) : (
                                   <span className="pm-muted">{planned ? "" : i.status}</span>
@@ -141,6 +160,35 @@ export default async function BatchesPage({ params, searchParams }: { params: Pr
                   ) : null}
                 </details>
               </form>
+              {b.status === "completed" && readyArts.length > 0 ? (
+                <div className="pm-wpbox">
+                  <p className="pm-muted" style={{ margin: 0 }}>WordPress: {readyArts.length - notSent} of {readyArts.length} sent.{notSent > 0 ? ` ${notSent} not sent yet.` : ""}</p>
+                  {notSent > 0 ? (
+                    <form action={sendBatchToWordPress} style={{ marginTop: "0.6rem" }}>
+                      <input type="hidden" name="run" value={map.run.id} />
+                      <input type="hidden" name="batch" value={b.id} />
+                      <button type="submit" name="plan" value="drafts" className="pm-btn pm-btn-primary">Save {notSent} article{notSent === 1 ? "" : "s"} in WordPress as drafts</button>
+                    </form>
+                  ) : null}
+                  {greens > 0 ? (
+                    <details className="pm-more">
+                      <summary>Or publish them gradually</summary>
+                      <form action={sendBatchToWordPress} className="pm-inline" style={{ gap: "0.6rem", marginTop: "0.5rem", alignItems: "end" }}>
+                        <input type="hidden" name="run" value={map.run.id} />
+                        <input type="hidden" name="batch" value={b.id} />
+                        <input type="hidden" name="plan" value="spread" />
+                        <label className="pm-field">Start on<input name="start" type="date" required defaultValue={today} className="pm-input" /></label>
+                        <label className="pm-field">Per day<input name="per_day" type="number" min={1} max={10} defaultValue={3} className="pm-input" style={{ width: "5rem" }} /></label>
+                        <label className="pm-field">From<input name="from" type="time" defaultValue="09:00" className="pm-input" /></label>
+                        <label className="pm-field">Until<input name="until" type="time" defaultValue="18:00" className="pm-input" /></label>
+                        <button type="submit" className="pm-btn">Schedule {greens}</button>
+                      </form>
+                      <p className="pm-muted">Times are your WordPress site&apos;s own clock. Red articles and ones already published or scheduled are left out. Each article is sent in the background and takes a few seconds.</p>
+                    </details>
+                  ) : null}
+                </div>
+              ) : null}
+              </div>
             );
           })}
         </section>

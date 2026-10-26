@@ -5,10 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { savePost, type PostMode } from "@/modules/wordpress/client";
-import { excerptOf, postContent, relatedHtml } from "@/modules/wordpress/push";
-import { decryptSitePassword } from "@/modules/wordpress/secret";
-import type { SchemaNode } from "@/modules/articles/publish";
+import { sendArticle, type SendMode } from "@/modules/wordpress/send";
 import type { RelatedLink } from "@/modules/articles/publish";
 import { parseEditForm, partsOfEdit, rebuildAfterEdit, sectionRows } from "@/modules/articles/edit";
 import { storedOutlineSchema } from "@/modules/articles/prompts";
@@ -47,9 +44,6 @@ export async function requestGloss(formData: FormData) {
 // Send to WordPress (Batch 16): saves the ready article as a DRAFT (or updates the draft saved earlier). Free, nothing is published.
 // ---------------------------------------------------------------------------
 const pushForm = z.object({ run: z.string().uuid(), article: z.string().uuid(), mode: z.enum(["draft", "publish", "schedule"]).default("draft"), when: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/).optional() });
-const liveRow = z.object({ title: z.string(), link: z.string() });
-const targetRow = z.object({ site_id: z.string().uuid(), base_url: z.string(), wp_user: z.string(), ciphertext: z.string(), wp_post_id: z.union([z.number(), z.string()]).nullable() });
-const articleRow = z.object({ title: z.string().nullable(), slug: z.string().nullable(), body_html: z.string().nullable(), meta_description: z.string().nullable(), schema_json: z.unknown(), workspace_id: z.string().uuid(), qa: z.object({ verdict: z.string().optional() }).passthrough(), locale: z.string() });
 
 export async function sendToWordPress(formData: FormData) {
   const run = String(formData.get("run") ?? "");
@@ -61,54 +55,18 @@ export async function sendToWordPress(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect(`/login?next=${encodeURIComponent(`/maps/${f.data.run}/articles/${f.data.article}`)}`);
-  const sb = createAdminClient();
-
   if (f.data.mode === "schedule" && !f.data.when) redirect(back("need_date"));
-  const t = await sb.rpc("site_article_target", { p_user: user.id, p_article: f.data.article });
-  if (t.error) {
-    const c = t.error.code;
-    redirect(back(c === "PM004" ? "no_site" : c === "22023" ? "site_choice" : c === "PM003" ? "notready" : "error"));
-  }
-  const target = targetRow.safeParse(Array.isArray(t.data) ? t.data[0] : t.data);
-  if (!target.success) redirect(back("no_site"));
-  const a = await sb.from("articles").select("title, slug, body_html, meta_description, schema_json, workspace_id, qa, locale").eq("id", f.data.article).maybeSingle();
-  const art = articleRow.safeParse(a.data);
-  if (!art.success || !art.data.title || !art.data.body_html) redirect(back("error"));
 
-  // a red article is never published or scheduled from here (a draft is fine: the user can still read and fix it in WordPress)
-  if (f.data.mode !== "draft" && art.data.qa.verdict === "fail") redirect(back("blocked"));
-
-  let password: string;
-  try {
-    password = decryptSitePassword(art.data.workspace_id, target.data.base_url, target.data.ciphertext);
-  } catch {
-    redirect(back("no_master_key"));
-  }
-  const schema = Array.isArray(art.data.schema_json) ? (art.data.schema_json as SchemaNode[]) : null;
-  const existing = target.data.wp_post_id === null ? null : Number(target.data.wp_post_id);
-  // links only to articles that are really published on this site (never to drafts or unwritten ideas)
-  const live = await sb.rpc("article_live_links", { p_user: user.id, p_article: f.data.article, p_site: target.data.site_id });
-  const liveLinks = z.array(liveRow).safeParse(live.data ?? []);
-  const related = live.error || !liveLinks.success ? "" : relatedHtml(liveLinks.data, art.data.locale);
-  const mode: PostMode = f.data.mode === "publish" ? { kind: "publish" } : f.data.mode === "schedule" ? { kind: "future", date: `${f.data.when}:00` } : { kind: "keep" };
-  const r = await savePost(
-    { baseUrl: target.data.base_url, user: target.data.wp_user, password },
-    { title: art.data.title, content: postContent(art.data.body_html, schema, related), slug: art.data.slug, excerpt: excerptOf(art.data.meta_description) },
-    existing !== null && Number.isFinite(existing) ? existing : null,
-    mode,
-  );
-  if (!r.ok) {
-    console.error("wordpress push failed", r.code);
-    await sb.rpc("site_record_test", { p_user: user.id, p_site: target.data.site_id, p_ok: r.code !== "bad_login" && r.code !== "no_rest_api", p_code: r.code });
-    redirect(back("wp_failed", `&code=${encodeURIComponent(r.code)}`));
-  }
-  const saved = await sb.rpc("article_wp_saved", { p_user: user.id, p_article: f.data.article, p_site: target.data.site_id, p_post_id: r.data.id, p_edit_url: r.data.editUrl, p_status: r.data.status, p_link: r.data.link });
+  const mode: SendMode = f.data.mode === "publish" ? { kind: "publish" } : f.data.mode === "schedule" ? { kind: "future", when: f.data.when ?? "" } : { kind: "draft" };
+  const r = await sendArticle(createAdminClient(), user.id, f.data.article, mode);
   revalidatePath(`/maps/${f.data.run}/articles/${f.data.article}`);
-  if (saved.error) {
-    console.error("wordpress save bookkeeping failed", saved.error.code ?? "no_code");
-    redirect(back("sent_unsaved"));
+  if (!r.ok) {
+    console.error("wordpress send failed", r.code);
+    const known = ["no_site", "site_choice", "notready", "blocked", "no_master_key", "error"];
+    if (r.code === "unsaved") redirect(back("sent_unsaved"));
+    redirect(known.includes(r.code) ? back(r.code) : back("wp_failed", `&code=${encodeURIComponent(r.code)}`));
   }
-  redirect(back(!r.data.schemaKept ? "sent_noschema" : r.data.status === "publish" ? "published" : r.data.status === "future" ? "scheduled" : "sent"));
+  redirect(back(!r.schemaKept ? "sent_noschema" : r.status === "publish" ? "published" : r.status === "future" ? "scheduled" : "sent"));
 }
 
 // ---------------------------------------------------------------------------
