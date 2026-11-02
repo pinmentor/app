@@ -1,12 +1,10 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import Link from "next/link";
-import { Logo } from "@/components/brand";
+import { AppFrame } from "@/app/maps/chrome";
 import { PathList } from "@/components/path";
 import { userPath } from "@/lib/home/user-path";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { signOut } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Dashboard — PinMentor" };
@@ -55,51 +53,35 @@ export default async function DashboardPage() {
   );
 
   return (
-    <>
-      <header className="pm-appbar">
-        <div className="pm-wrap pm-appbar-in">
-          <Logo href="/dashboard" />
-          <div className="pm-appbar-user">
-            <Link href="/maps">Maps</Link>
-            <Link href="/sites">WordPress</Link>
-            <span>{user.email}</span>
-            <form action={signOut}>
-              <button type="submit" className="pm-btn pm-btn-quiet pm-btn-sm">Sign out</button>
-            </form>
-          </div>
+    <AppFrame email={user.email ?? ""}>
+      {loadFailed ? <p className="pm-note pm-note-bad">Could not load your workspace. Please refresh.</p> : null}
+
+      {homes.length === 0 && !loadFailed ? (
+        <div className="pm-empty">
+          <h1>Welcome</h1>
+          <p>Your workspace is created when you confirm your email. Refresh this page after confirming.</p>
         </div>
-      </header>
+      ) : null}
 
-      <main className="pm-wrap pm-page">
-        {loadFailed ? <p className="pm-note pm-note-bad">Could not load your workspace. Please refresh.</p> : null}
+      {homes.map((h) => (
+        <section key={h.ws.id} aria-label={h.ws.name}>
+          <h1>{h.path.now === -1 ? "You are all set up" : "Welcome — here is your path"}</h1>
+          <p className="pm-muted" style={{ marginTop: 0 }}>
+            {h.path.now === -1 ? "Everything is connected and working. Keep writing, or open your maps." : "Follow the steps in order. Each one has a single button."}
+          </p>
+          {h.failed ? <p className="pm-note pm-note-bad">Some numbers could not be loaded. Refresh the page.</p> : null}
 
-        {homes.length === 0 && !loadFailed ? (
-          <div className="pm-empty">
-            <h1>Welcome</h1>
-            <p>Your workspace is created when you confirm your email. Refresh this page after confirming.</p>
+          <PathList steps={h.path.steps} now={h.path.now} />
+
+          <div className="pm-stats" aria-label="Your numbers">
+            <div className="pm-stat"><b>{h.credits ?? "—"}</b><span>credits available</span></div>
+            <div className="pm-stat"><b>{h.maps}</b><span>topical maps</span></div>
+            <div className="pm-stat"><b>{h.ready}</b><span>articles ready</span></div>
+            <div className="pm-stat"><b>{h.sent}</b><span>drafts in WordPress</span></div>
           </div>
-        ) : null}
-
-        {homes.map((h) => (
-          <section key={h.ws.id} aria-label={h.ws.name}>
-            <h1>{h.path.now === -1 ? "You are all set up" : "Welcome — here is your path"}</h1>
-            <p className="pm-muted" style={{ marginTop: 0 }}>
-              {h.path.now === -1 ? "Everything is connected and working. Keep writing, or open your maps." : "Follow the steps in order. Each one has a single button."}
-            </p>
-            {h.failed ? <p className="pm-note pm-note-bad">Some numbers could not be loaded. Refresh the page.</p> : null}
-
-            <PathList steps={h.path.steps} now={h.path.now} />
-
-            <div className="pm-stats" aria-label="Your numbers">
-              <div className="pm-stat"><b>{h.credits ?? "—"}</b><span>credits available</span></div>
-              <div className="pm-stat"><b>{h.maps}</b><span>topical maps</span></div>
-              <div className="pm-stat"><b>{h.ready}</b><span>articles ready</span></div>
-              <div className="pm-stat"><b>{h.sent}</b><span>drafts in WordPress</span></div>
-            </div>
-            <p className="pm-muted">{h.ws.name}</p>
-          </section>
-        ))}
-      </main>
-    </>
+          <p className="pm-muted">{h.ws.name}</p>
+        </section>
+      ))}
+    </AppFrame>
   );
 }
