@@ -34,8 +34,7 @@ export default async function QueuePage() {
   const waiting = articles.filter((x) => x.status === "queued");
   const failed = articles.filter((x) => x.status === "failed");
   const buildingMaps = runs.filter((r) => r.status !== "failed");
-  const recent = Date.now() - 14 * 24 * 3600 * 1000; // an old failed map is history, not something to act on
-  const failedMaps = runs.filter((r) => r.status === "failed" && Date.parse(r.created_at) > recent);
+  const failedMaps = runs.filter((r) => r.status === "failed").slice(0, 3); // only the latest few; older failures are history
   const empty = !loadFailed && articles.length === 0 && runs.length === 0;
 
   return (
