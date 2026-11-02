@@ -21,3 +21,10 @@
 - নতুন: `/articles` (স্ট্যাটাস/চেক/WP ফিল্টার), `/queue` (আর্টিকেল ও ম্যাপ থেকে; `jobs` অ্যাডমিন-অনলি থাকে), `loading/error/not-found`, CSS `pm-ladder*`, `pm-nav*`, `pm-chips`, `pm-list`।
 **কীভাবে টেস্ট:** শুধু `stepper.ts` নোড দিয়ে হাতে চালিয়ে ৪টি অবস্থা মিলিয়েছি। `pnpm lint/typecheck/test/build` চলেনি (npm বন্ধ)।
 **কী অযাচাইকৃত:** টাইপ/লিন্ট/বিল্ড; `qa->>verdict` ফিল্টার আসল DB-তে; `AppFrame` async হওয়ায় প্রতি পেজে ৫টি অতিরিক্ত কুয়েরি (ধীর লাগলে জানাও); মোবাইলে সিঁড়ির চেহারা; B23b বাকি (MASTER_PLAN)।
+
+## B23b — Websites ভাষা/CTA, Settings (২০২৬-১১-০২) · অবস্থা: কোড+SQL লেখা, লোকালে SQL-টেস্ট সবুজ, **অ্যাপ বিল্ড হয়নি**
+**কী বদলাল**
+- `0026_site_settings_review_language.sql`: `sites.language/locale/cta_label` (ডিফল্ট es/es-MX/খালি, locale ভাষার সাথে মিলতে হয়), `workspaces.review_language` (ডিফল্ট bn); ফাংশন `site_update_settings`, `workspace_set_review_language` (শুধু service_role; দ্বিতীয়টা শুধু owner/admin)।
+- `/sites` = "Websites": প্রতি সাইটে ভাষা (locale ভাষা থেকে নিজে বসে) ও CTA ফর্ম। নতুন `/settings` (অ্যাকাউন্ট + ডিফল্ট অনুবাদ ভাষা); নেভে Settings চালু। আর্টিকেল-অনুবাদ ট্যাব `?lang=` না থাকলে ওয়ার্কস্পেসের ডিফল্ট নেয়।
+**কীভাবে টেস্ট:** `rls_0026.sql` লোকাল Postgres 16 + শিমে (pgvector ছাড়া, ০০০৯ বাদ) ২৭/২৭ পাস। অ্যাপ-কোডে lint/typecheck/build চলেনি (npm বন্ধ)।
+**কী অযাচাইকৃত:** আসল Supabase-এ 0026 ও `rls_0026`; ফর্মগুলো ব্রাউজারে; `<select>`-এর `pm-input` চেহারা; CTA-লেবেল এখনো কোনো আর্টিকেলে বসে না (B28/B30)।

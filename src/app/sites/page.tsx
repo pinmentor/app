@@ -2,16 +2,19 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { AppFrame } from "@/app/maps/chrome";
 import { createClient } from "@/lib/supabase/server";
-import { connectSite, removeSite, retestSite } from "./actions";
+import { LANGUAGES } from "@/lib/languages";
+import { connectSite, removeSite, retestSite, updateSiteSettings } from "./actions";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "WordPress — PinMentor" };
+export const metadata = { title: "Websites — PinMentor" };
 
-const siteRow = z.object({ id: z.string().uuid(), base_url: z.string(), wp_user: z.string(), last4: z.string(), status: z.string(), last_test_code: z.string().nullable() });
+const siteRow = z.object({ id: z.string().uuid(), base_url: z.string(), wp_user: z.string(), last4: z.string(), status: z.string(), last_test_code: z.string().nullable(), language: z.string(), locale: z.string(), cta_label: z.string().nullable() });
 
 const FLASH: Record<string, { text: string; ok: boolean }> = {
   connected: { text: "Connected. You can now send ready articles to this site as drafts.", ok: true },
   removed: { text: "Site removed.", ok: true },
+  settings_saved: { text: "Settings saved.", ok: true },
+  bad_settings: { text: "Choose a language and keep the call-to-action text under 60 characters.", ok: false },
   invalid: { text: "Fill in all three fields (the password is at least 8 characters).", ok: false },
   bad_address: { text: "That address is not accepted. Use the full https address of your site, for example https://myblog.com.", ok: false },
   limit: { text: "You can connect up to 5 sites. Remove one first.", ok: false },
@@ -35,7 +38,7 @@ export default async function SitesPage({ searchParams }: { searchParams: Promis
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login?next=%2Fsites");
   const raw = await searchParams;
-  const res = await supabase.from("sites").select("id, base_url, wp_user, last4, status, last_test_code").order("created_at");
+  const res = await supabase.from("sites").select("id, base_url, wp_user, last4, status, last_test_code, language, locale, cta_label").order("created_at");
   const sites = z.array(siteRow).safeParse(res.data ?? []);
   const list = sites.success ? sites.data : [];
   const flash = typeof raw.flash === "string" ? FLASH[raw.flash] : undefined;
@@ -45,14 +48,14 @@ export default async function SitesPage({ searchParams }: { searchParams: Promis
     <AppFrame email={user.email ?? ""}>
       <div className="pm-pagehead">
         <div>
-          <h1>WordPress</h1>
-          <p>Connect your site once. Then every ready article has a “Send to WordPress” button that saves it there as a draft. Nothing is published automatically.</p>
+          <h1>Websites</h1>
+          <p>Connect each WordPress site once, and say which language its articles are written in. Every ready article then has a “Send to WordPress” button that saves it there as a draft. Nothing is published automatically.</p>
         </div>
       </div>
 
       {flash ? <p role="status" className={flash.ok ? "pm-note pm-note-ok" : "pm-note pm-note-bad"}>{flash.text}</p> : null}
       {raw.flash === "failed" ? <p role="status" className="pm-note pm-note-bad">Saved, but the test failed. {explain(code)}</p> : null}
-      {res.error || !sites.success ? <p className="pm-note pm-note-bad">Could not load your sites. Check that migration 0021 is applied.</p> : null}
+      {res.error || !sites.success ? <p className="pm-note pm-note-bad">Could not load your sites. Check that migrations 0021 and 0026 are applied.</p> : null}
 
       {list.map((s) => (
         <section key={s.id} className="pm-price">
@@ -66,6 +69,23 @@ export default async function SitesPage({ searchParams }: { searchParams: Promis
             <input type="hidden" name="site" value={s.id} />
             <button type="submit" className="pm-btn">Test again</button>
           </form>
+          <details className="pm-more">
+            <summary>Language and call-to-action · {LANGUAGES.find((l) => l.code === s.language)?.name ?? s.language} ({s.locale}){s.cta_label ? ` · “${s.cta_label}”` : ""}</summary>
+            <form action={updateSiteSettings} className="pm-keyform">
+              <input type="hidden" name="site" value={s.id} />
+              <label className="pm-field">Language of the articles
+                <select name="language" defaultValue={s.language} className="pm-input">
+                  {LANGUAGES.map((l) => (
+                    <option key={l.code} value={l.code}>{l.name} ({l.locale})</option>
+                  ))}
+                </select>
+              </label>
+              <label className="pm-field">Call-to-action text (the same on every article of this site)
+                <input name="cta" defaultValue={s.cta_label ?? ""} maxLength={60} className="pm-input" autoComplete="off" />
+              </label>
+              <button type="submit" className="pm-btn pm-btn-sm">Save</button>
+            </form>
+          </details>
           <details className="pm-more">
             <summary>Remove</summary>
             <form action={removeSite}>

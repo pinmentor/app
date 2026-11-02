@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { LANGUAGES } from "@/lib/languages";
 import { createClient } from "@/lib/supabase/server";
 import { testSite } from "@/modules/wordpress/client";
 import { cleanAppPassword, decryptSitePassword, encryptSitePassword } from "@/modules/wordpress/secret";
@@ -82,4 +83,23 @@ export async function removeSite(formData: FormData) {
   const res = await createAdminClient().rpc("site_delete", { p_user: userId, p_site: f.data.site });
   revalidatePath("/sites");
   redirect(`/sites?flash=${res.error ? "error" : "removed"}`);
+}
+
+const settingsForm = z.object({
+  site: z.string().uuid(),
+  language: z.enum(LANGUAGES.map((l) => l.code) as [string, ...string[]]),
+  cta: z.string().trim().max(60),
+});
+
+/** Content language of a website and its one call-to-action text. The locale is derived from the language here, never typed by the user. */
+export async function updateSiteSettings(formData: FormData) {
+  const { userId } = await me();
+  const f = settingsForm.safeParse({ site: formData.get("site"), language: formData.get("language"), cta: String(formData.get("cta") ?? "") });
+  if (!f.success) redirect("/sites?flash=bad_settings");
+  const locale = LANGUAGES.find((l) => l.code === f.data.language)?.locale;
+  if (!locale) redirect("/sites?flash=bad_settings");
+  const res = await createAdminClient().rpc("site_update_settings", { p_user: userId, p_site: f.data.site, p_language: f.data.language, p_locale: locale, p_cta: f.data.cta });
+  if (res.error) console.error("site settings failed", res.error.code ?? "no_code");
+  revalidatePath("/sites");
+  redirect(`/sites?flash=${res.error ? "error" : "settings_saved"}`);
 }

@@ -9,8 +9,9 @@ const LINKS = [
   { href: "/maps", label: "Maps" },
   { href: "/articles", label: "Articles" },
   { href: "/queue", label: "Queue" },
+  { href: "/settings", label: "Settings" },
 ] as const;
-const SOON = ["Pins", "Schedule", "Results", "Settings"] as const;
+const SOON = ["Pins", "Schedule", "Results"] as const;
 
 /** Main navigation of the signed-in pages. Not-built sections are shown as "Soon" so the whole product is visible. */
 export function NavLinks() {

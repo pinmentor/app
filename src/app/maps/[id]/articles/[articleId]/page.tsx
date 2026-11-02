@@ -92,7 +92,10 @@ export default async function ArticlePage({ params, searchParams }: { params: Pr
   const light = lightOf(art.qa.verdict);
   const review = storedReviewSchema.safeParse(art.review);
   const tab: Tab = TABS.some((t) => t.key === sp.tab) ? (sp.tab as Tab) : "read";
-  const lang: GlossLang = isGlossLang(sp.lang) ? sp.lang : "bn";
+  // translation language: the screen's own choice, else the workspace default from Settings (0026), else Bengali
+  const wsLang = tab === "translation" && !isGlossLang(sp.lang) ? await supabase.from("workspaces").select("review_language").limit(1).maybeSingle() : null;
+  const wsDefault: unknown = wsLang?.data?.review_language;
+  const lang: GlossLang = isGlossLang(sp.lang) ? sp.lang : isGlossLang(wsDefault) ? wsDefault : "bn";
   const flash = sp.flash ? FLASH[sp.flash] : undefined;
   const base = `/maps/${art.map_run_id}/articles/${art.id}`;
   const srcDoc = `<!doctype html><html><head><meta charset="utf-8"><style>${PREVIEW_CSS}</style></head><body>${art.body_html ?? ""}</body></html>`;
