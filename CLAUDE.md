@@ -4,7 +4,7 @@ Multi-user SaaS: topic → verified topical map (100–500+ articles) → batch 
 **Full spec: `docs/PLAN.md` — read it before any task.** Language of the docs is Bengali; code, comments, commit messages and identifiers are English.
 
 ## Stack
-Next.js (App Router, TypeScript strict), Supabase (Postgres, Auth, RLS, Storage, pgvector, pg_cron, pg_net), Tailwind + shadcn/ui, Vercel. Package manager: pnpm. Tests: Vitest (+ Playwright smoke).
+Next.js (App Router, TypeScript strict), Supabase (Postgres, Auth, RLS, Storage, pgvector, pg_cron, pg_net), Tailwind 4 with the app's own design system (`src/app/globals.css`, `pm-` classes; no shadcn/ui), Vercel. Package manager: pnpm. Tests: Vitest (+ Playwright smoke).
 
 ## Hard rules
 - Validate every external input and every LLM output with Zod.
@@ -31,6 +31,8 @@ Next.js (App Router, TypeScript strict), Supabase (Postgres, Auth, RLS, Storage,
 
 ## Delivery mode (browser-only GitHub)
 The owner uploads files via the GitHub web UI (drag & drop, max 100 files per upload). So: deliver **only new/changed files** with their repo paths, keep each batch < 100 files, and list any files to delete by hand. DB changes = numbered SQL files in `supabase/migrations/` that the owner pastes into the Supabase SQL Editor in order. Never commit `node_modules` or `.env`. Run `pnpm lint && pnpm typecheck && pnpm test && pnpm build` before delivering.
+**The owner is browser-only and never runs a CLI.** Anything operational must be an admin page/job or a GitHub Action with a `workflow_dispatch` button — never "run `pnpm …`" as an owner step. (`pnpm …` commands are for the agent/CI only.)
+**Order of work:** `MASTER_PLAN.md` (given with each chat) decides the next batch; one batch per chat; the owner verifies before the next batch.
 
 ## Commands
 `pnpm dev` · `pnpm lint` · `pnpm typecheck` · `pnpm test` · `pnpm eval:dedup` · `supabase db reset` · `supabase db lint`
