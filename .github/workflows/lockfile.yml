@@ -1,0 +1,30 @@
+name: Refresh lockfile
+# One-time button (Actions tab -> "Refresh lockfile" -> Run workflow).
+# Regenerates pnpm-lock.yaml from package.json, deletes the .npmrc workaround, proves the result with
+# `pnpm install --frozen-lockfile`, then commits both changes to the branch it was run on.
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Remove the frozen-lockfile=false workaround
+        run: rm -f .npmrc
+      - name: Regenerate pnpm-lock.yaml
+        run: pnpm install --no-frozen-lockfile --lockfile-only
+      - name: Prove the lockfile is complete
+        run: pnpm install --frozen-lockfile
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A pnpm-lock.yaml .npmrc
+          git diff --cached --quiet && { echo "Nothing to commit"; exit 0; }
+          git commit -m "chore: regenerate pnpm-lock.yaml and drop .npmrc workaround"
+          git push
