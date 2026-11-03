@@ -67,11 +67,12 @@ export default async function DashboardPage() {
         <section key={h.ws.id} aria-label={h.ws.name}>
           <h1>{h.path.now === -1 ? "You are all set up" : "Welcome — here is your path"}</h1>
           <p className="pm-muted" style={{ marginTop: 0 }}>
-            {h.path.now === -1 ? "Everything is connected and working. Keep writing, or open your maps." : "Follow the steps in order. Each one has a single button."}
+            {h.path.now === -1 ? "Everything is connected and working. Keep writing, or open your maps." : "Follow the steps in order. The current step has a single button."}
           </p>
           {h.failed ? <p className="pm-note pm-note-bad">Some numbers could not be loaded. Refresh the page.</p> : null}
 
-          <PathList steps={h.path.steps} now={h.path.now} />
+          {/* the 8-step ladder above shows the whole line; here only the current step, with its one main button */}
+          {h.path.now >= 0 ? <PathList steps={[h.path.steps[h.path.now]!]} now={0} startAt={h.path.now} /> : null}
 
           <div className="pm-stats" aria-label="Your numbers">
             <div className="pm-stat"><b>{h.credits ?? "—"}</b><span>credits available</span></div>

@@ -65,7 +65,7 @@ export default async function QueuePage() {
             {failed.map((x) => (
               <li key={x.id}>
                 <Link href={`/maps/${x.map_run_id}/articles/${x.id}`}>{x.title ?? x.keyword}</Link> could not be written{x.last_error ? `: ${x.last_error}` : ""}.{" "}
-                <Link href={`/maps/${x.map_run_id}/batches`}>Open the batch to write it again</Link>
+                It is free to write again, and you pay only for articles that come out ready. <Link href={`/maps/${x.map_run_id}/batches`}>Open batches to group and write it again</Link>
               </li>
             ))}
           </ul>
