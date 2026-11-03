@@ -19,6 +19,10 @@ export const startRunSchema = z
     targetMax: z.coerce.number().int().min(10).max(1000),
     mode: z.enum(["fast", "economy"]),
     key: z.string().min(8).max(100),
+    // own keywords (B24): pasted lines, the saved library, and "only these" (skips S1-S2)
+    ownKeywords: z.string().max(200000).optional(),
+    useLibrary: z.string().max(10).optional(),
+    onlyMine: z.string().max(10).optional(),
   })
   .refine((v) => v.size === "auto" || (v.targetMin !== undefined && v.targetMin <= v.targetMax), { message: "custom size needs min <= max" })
   .transform((v) => ({ ...v, targetMin: v.size === "auto" ? 10 : (v.targetMin as number) }));

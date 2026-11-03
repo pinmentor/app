@@ -15,6 +15,7 @@ const FLASH: Record<string, { text: string; ok: boolean }> = {
   started: { text: "Map run started. It advances one step per minute; refresh to follow it.", ok: true },
   canceled: { text: "Run canceled and its credits released.", ok: true },
   no_credits: { text: "Not enough credits in your workspace for this size. Grant yourself credits on the Users page.", ok: false },
+  need_keywords: { text: "No usable keywords found. \"Only my keywords\" needs at least 10 (pasted and/or from your saved library, in this run's language).", ok: false },
   invalid: { text: "Check the form: a topic, a locale, and a target between 10 and 1000 (min not above max).", ok: false },
   forbidden: { text: "Only a superadmin can start or cancel runs here, and only in their own workspace.", ok: false },
   error: { text: "Something went wrong. Nothing was changed; try again.", ok: false },
@@ -91,6 +92,17 @@ export default async function MapsPage({ searchParams }: { searchParams: Promise
               <option value="fast">Fast</option>
               <option value="economy">Economy</option>
             </select>
+            <details className="pm-more" style={{ flexBasis: "100%" }}>
+              <summary>My own keywords (optional)</summary>
+              <p>
+                <strong>Expand + mine</strong> (default when you paste keywords): the map finds its own keywords as usual and yours join them.{" "}
+                <strong>Only my keywords</strong>: skips the facet and expansion steps (no model spend there) and builds the map from exactly your list; needs at least 10.
+                The price is the normal map price for the size; Auto size and the ceiling are ignored for &ldquo;only mine&rdquo; (the size is your list).
+              </p>
+              <textarea name="ownKeywords" rows={5} placeholder={"one keyword per line"} aria-label="My keywords" className="pm-input" style={{ width: "100%" }} />
+              <label className="pm-inline"><input type="checkbox" name="useLibrary" /> also add my saved library (this run&apos;s language)</label>
+              <label className="pm-inline"><input type="checkbox" name="onlyMine" /> only my keywords (skip the model&apos;s own expansion)</label>
+            </details>
             <button type="submit" className="pm-btn pm-btn-brand">
               Start run
             </button>
