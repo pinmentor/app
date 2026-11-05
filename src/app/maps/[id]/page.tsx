@@ -21,7 +21,7 @@ const runSchema = z.object({
 });
 const siloSchema = z.object({ id: z.string().uuid(), name: z.string(), size: z.number(), gloss: z.record(z.string(), z.unknown()), position: z.number() });
 const itemSchema = z.object({
-  id: z.string().uuid(), primary_kw_id: z.string().uuid(), silo_id: z.string().uuid().nullable(), keyword: z.string(), variants: z.array(z.string()), title: z.string().nullable(), article_type: z.string(),
+  id: z.string().uuid(), primary_kw_id: z.string().uuid(), existing_url: z.string().nullable(), existing_title: z.string().nullable(), silo_id: z.string().uuid().nullable(), keyword: z.string(), variants: z.array(z.string()), title: z.string().nullable(), article_type: z.string(),
   list_count: z.number().nullable(), status: z.string(), flags: z.array(z.string()), gloss: z.record(z.string(), z.unknown()), link_plan: z.record(z.string(), z.unknown()), position: z.number(),
 });
 const sizingSchema = z.object({ mode: z.string(), ceiling: z.number(), kept: z.number(), natural: z.number(), trimmed: z.number() });
@@ -62,7 +62,7 @@ export default async function ReviewMapPage({ params, searchParams }: { params: 
   if (!run.success) notFound();
   const [silosRes, itemsRes] = await Promise.all([
     supabase.from("silos").select("id, name, size, gloss, position").eq("map_run_id", id.data).order("position"),
-    supabase.from("plan_items").select("id, primary_kw_id, silo_id, keyword, variants, title, article_type, list_count, status, flags, gloss, link_plan, position").eq("map_run_id", id.data).order("position").limit(1000),
+    supabase.from("plan_items").select("id, primary_kw_id, existing_url, existing_title, silo_id, keyword, variants, title, article_type, list_count, status, flags, gloss, link_plan, position").eq("map_run_id", id.data).order("position").limit(1000),
   ]);
   const silos = z.array(siloSchema).safeParse(silosRes.data ?? []);
   const items = z.array(itemSchema).safeParse(itemsRes.data ?? []);
@@ -190,6 +190,7 @@ export default async function ReviewMapPage({ params, searchParams }: { params: 
                                 {pillar ? <strong>{i.keyword}</strong> : i.keyword}
                                 {i.variants.length > 0 ? <div className="pm-muted">also: {i.variants.join(", ")}</div> : null}
                                 {kg ? <div className="pm-muted">{kg}</div> : null}
+                                {i.existing_url ? <div className="pm-muted">on your site: <a href={i.existing_url} target="_blank" rel="noopener noreferrer">{i.existing_title || i.existing_url.replace("https://", "")}</a></div> : null}
                               </td>
                               <td>
                                 {i.title ?? ""}

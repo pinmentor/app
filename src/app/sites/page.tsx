@@ -3,17 +3,25 @@ import { z } from "zod";
 import { AppFrame } from "@/app/maps/chrome";
 import { createClient } from "@/lib/supabase/server";
 import { LANGUAGES } from "@/lib/languages";
-import { connectSite, removeSite, retestSite, updateSiteSettings } from "./actions";
+import { clearSiteContent, connectSite, removeSite, retestSite, syncSiteContent, updateSiteSettings } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Websites — PinMentor" };
 
-const siteRow = z.object({ id: z.string().uuid(), base_url: z.string(), wp_user: z.string(), last4: z.string(), status: z.string(), last_test_code: z.string().nullable(), language: z.string(), locale: z.string(), cta_label: z.string().nullable() });
+const siteRow = z.object({ id: z.string().uuid(), base_url: z.string(), wp_user: z.string(), last4: z.string(), status: z.string(), last_test_code: z.string().nullable(), language: z.string(), locale: z.string(), cta_label: z.string().nullable(),
+  content_sync_state: z.string(), content_sync_started_at: z.string().nullable(), content_synced_at: z.string().nullable(), content_sync_error: z.string().nullable(), content_sync_total: z.number(), content_sync_done: z.number() });
+const pageRow = z.object({ url: z.string(), title: z.string().nullable(), source: z.string() });
+const SYNC_ERRORS: Record<string, string> = { nothing_found: "No pages were found: the site has no readable WordPress API, sitemap or feed. Paste the page addresses instead.", site_not_found: "The site was not found.", db_error: "A database error stopped the sync. Try again." };
+const when = (iso: string | null) => (iso ? new Date(iso).toISOString().slice(0, 16).replace("T", " ") + " UTC" : "never");
 
 const FLASH: Record<string, { text: string; ok: boolean }> = {
   connected: { text: "Connected. You can now send ready articles to this site as drafts.", ok: true },
   removed: { text: "Site removed.", ok: true },
   settings_saved: { text: "Settings saved.", ok: true },
+  sync_started: { text: "Reading your website has started. It runs in the background; use Refresh to see the progress.", ok: true },
+  sync_running: { text: "A sync is already running for this site. Wait for it to finish (or refresh in a few minutes).", ok: false },
+  sync_no_urls: { text: "No usable address found. Paste full https addresses of pages on this site, one per line.", ok: false },
+  content_cleared: { text: "The stored page list of this site was removed.", ok: true },
   bad_settings: { text: "Choose a language and keep the call-to-action text under 60 characters.", ok: false },
   invalid: { text: "Fill in all three fields (the password is at least 8 characters).", ok: false },
   bad_address: { text: "That address is not accepted. Use the full https address of your site, for example https://myblog.com.", ok: false },
@@ -38,9 +46,15 @@ export default async function SitesPage({ searchParams }: { searchParams: Promis
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login?next=%2Fsites");
   const raw = await searchParams;
-  const res = await supabase.from("sites").select("id, base_url, wp_user, last4, status, last_test_code, language, locale, cta_label").order("created_at");
+  const res = await supabase.from("sites").select("id, base_url, wp_user, last4, status, last_test_code, language, locale, cta_label, content_sync_state, content_sync_started_at, content_synced_at, content_sync_error, content_sync_total, content_sync_done").order("created_at");
   const sites = z.array(siteRow).safeParse(res.data ?? []);
   const list = sites.success ? sites.data : [];
+  const pages = new Map<string, z.infer<typeof pageRow>[]>();
+  for (const s of list) {
+    const r = await supabase.from("site_contents").select("url, title, source").eq("site_id", s.id).order("published_at", { ascending: false, nullsFirst: false }).limit(15);
+    const rows = z.array(pageRow).safeParse(r.data ?? []);
+    pages.set(s.id, rows.success ? rows.data : []);
+  }
   const flash = typeof raw.flash === "string" ? FLASH[raw.flash] : undefined;
   const code = typeof raw.code === "string" ? raw.code.slice(0, 60) : "";
 
@@ -69,6 +83,53 @@ export default async function SitesPage({ searchParams }: { searchParams: Promis
             <input type="hidden" name="site" value={s.id} />
             <button type="submit" className="pm-btn">Test again</button>
           </form>
+          <details className="pm-more" open={s.content_sync_state === "running" || s.content_sync_state === "failed" || undefined}>
+            <summary>
+              Website content · {s.content_sync_state === "running" ? `reading… ${s.content_sync_done} of ${s.content_sync_total} pages` : s.content_sync_total > 0 ? `${s.content_sync_total} pages known, last sync ${when(s.content_synced_at)}` : "not read yet"}
+            </summary>
+            <p className="pm-muted">
+              We read only the page titles, headings and short descriptions of your website (never the full text), so a new map can tell which topics you already cover and mark them “already exists”.
+              {s.content_sync_state === "running" ? " A sync is running." : ""}
+              {s.content_sync_state === "failed" ? ` The last sync stopped: ${SYNC_ERRORS[s.content_sync_error ?? ""] ?? s.content_sync_error ?? "unknown error"}` : ""}
+            </p>
+            <div className="pm-inline" style={{ gap: "0.5rem", flexWrap: "wrap" }}>
+              <form action={syncSiteContent}>
+                <input type="hidden" name="site" value={s.id} />
+                <input type="hidden" name="mode" value="auto" />
+                <button type="submit" className="pm-btn pm-btn-sm" disabled={s.content_sync_state === "running"}>Sync now</button>
+              </form>
+              <a href="/sites" className="pm-btn pm-btn-quiet pm-btn-sm">Refresh</a>
+            </div>
+            <details className="pm-more">
+              <summary>Add pages by address instead</summary>
+              <form action={syncSiteContent} className="pm-keyform">
+                <input type="hidden" name="site" value={s.id} />
+                <input type="hidden" name="mode" value="urls" />
+                <label className="pm-field">Page addresses of this site (one per line, up to 500)
+                  <textarea name="urls" rows={5} className="pm-input" placeholder={`${s.base_url}/my-post/`} />
+                </label>
+                <button type="submit" className="pm-btn pm-btn-sm" disabled={s.content_sync_state === "running"}>Read these pages</button>
+              </form>
+            </details>
+            {(pages.get(s.id) ?? []).length > 0 ? (
+              <div className="pm-tablewrap">
+                <table className="pm-table">
+                  <thead><tr><th>Latest pages</th><th>Source</th></tr></thead>
+                  <tbody>
+                    {(pages.get(s.id) ?? []).map((p) => (
+                      <tr key={p.url}><td>{p.title ?? p.url.replace("https://", "")}</td><td>{p.source}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+            {s.content_sync_total > 0 ? (
+              <form action={clearSiteContent}>
+                <input type="hidden" name="site" value={s.id} />
+                <button type="submit" className="pm-btn pm-btn-quiet pm-btn-sm">Forget the stored page list</button>
+              </form>
+            ) : null}
+          </details>
           <details className="pm-more">
             <summary>Language and call-to-action · {LANGUAGES.find((l) => l.code === s.language)?.name ?? s.language} ({s.locale}){s.cta_label ? ` · “${s.cta_label}”` : ""}</summary>
             <form action={updateSiteSettings} className="pm-keyform">

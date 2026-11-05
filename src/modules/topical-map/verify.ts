@@ -109,9 +109,27 @@ export function checkLanguage(items: VItem[], locale: Locale, qa: LangQa): Check
   return check("V5", "Language / locale", "pass", `no language problems found; ${note}`);
 }
 
-/** V6 needs the site's existing posts (WordPress comes in a later batch). Stated, never faked. */
-export function checkExistingContent(): Check {
-  return check("V6", "Existing content", "skipped", "no site connected yet: nothing to compare against");
+export type ExistingHit = { itemId: string; keyword: string; kind: "same" | "close"; url: string; title: string | null };
+/** `pages` = how many pages of the connected site were compared; null = no site, or its content was never synced. */
+export type ExistingInput = { pages: number | null; hits: ExistingHit[]; total: number };
+
+/**
+ * V6: keywords the website already covers (B25). Never `fail`: a page on the site is information for the owner, not a defect of the map.
+ * No site or nothing synced -> skipped, said plainly (never a silent pass).
+ */
+export function checkExistingContent(x: ExistingInput = { pages: null, hits: [], total: 0 }): Check {
+  if (x.pages === null || x.pages === 0) return check("V6", "Existing content", "skipped", "no website content synced yet: connect your website and run Sync on the Websites page, then nothing is compared blindly");
+  const same = x.hits.filter((h) => h.kind === "same");
+  const close = x.hits.filter((h) => h.kind === "close");
+  const note = `${x.pages} pages of your website compared`;
+  if (x.hits.length === 0) return check("V6", "Existing content", "pass", `no keyword has a page on your website yet; ${note}`);
+  return check(
+    "V6",
+    "Existing content",
+    "flag",
+    `${same.length} of ${x.total} keywords already have a page (set aside as "already exists"), ${close.length} have a close page (flagged: update it or write a new angle); ${note}`,
+    x.hits.slice(0, 50).map((h) => ({ keyword: h.keyword, match: h.kind, page: h.url })),
+  );
 }
 
 const YMYL = /\b(alopecia|ca[ií]da del cabello|calvicie|caspa|dermatitis|psoriasis|infecci[oó]n|hongos|piojos?|tratamiento m[eé]dico|medicamento|cura|enfermedad|hair loss|baldness|dandruff)\b/i;

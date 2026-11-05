@@ -55,7 +55,16 @@ describe("V5/V6/V7", () => {
     expect(checkLanguage(items, "es-MX", { ran: false, reason: "no cross-provider model", sampled: 0, flagged: [] }).status).toBe("flag");
     expect(checkLanguage(items, "es-MX", noQa).status).toBe("pass");
   });
-  it("V6 is skipped, never faked", () => expect(checkExistingContent().status).toBe("skipped"));
+  it("V6 is skipped, never faked, without synced content", () => {
+    expect(checkExistingContent().status).toBe("skipped");
+    expect(checkExistingContent({ pages: 0, hits: [], total: 5 }).status).toBe("skipped");
+  });
+  it("V6 passes with no match, flags (never fails) with matches", () => {
+    expect(checkExistingContent({ pages: 40, hits: [], total: 5 }).status).toBe("pass");
+    const r = checkExistingContent({ pages: 40, hits: [{ itemId: "a", keyword: "k", kind: "same", url: "https://e.com/k", title: "K" }, { itemId: "b", keyword: "j", kind: "close", url: "https://e.com/j", title: null }], total: 5 });
+    expect(r.status).toBe("flag");
+    expect(r.summary).toContain("1 of 5 keywords already have a page");
+  });
   it("policy: YMYL, brands, celebrities, price words", () => {
     const c = checkPolicy([item({ id: "a", keyword: "tratamiento para alopecia" }), item({ id: "b", keyword: "plancha dyson" }), item({ id: "c", keyword: "peinados selena gomez" }), item({ id: "d", keyword: "plancha barata", flags: ["price_words"] }), item({ id: "e", keyword: "peinados para boda" })]);
     expect(c.status).toBe("flag");

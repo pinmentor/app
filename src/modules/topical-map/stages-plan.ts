@@ -11,12 +11,13 @@ import { samplePairs } from "./panel";
 import { judgeResponseSchema } from "./schemas";
 import { scoreItem } from "./score";
 import { clusterSilos, foldEdges, pickPillar, siloNameOrFallback, siloNamePrompt, siloNameResponseSchema, type Edge } from "./silo";
+import { buildIndex } from "@/modules/site-content/match";
 import { LIMITS, listRangeFor, thresholdsFor } from "./stage-config";
 import { shortText, tolerantList, withKeys } from "./tolerant";
 import { basePayload, db, enqueue, enqueueAdvance, failRun, liveRun, loadCandidates, parsePayload, isAutoSize, readAll, rpc, setStage, uuid, type Run } from "./stage-kit";
 import { assignListCounts, buildSlugs, cleanTitles, targetWords, titlePrompt, titleResponseSchema } from "./titles";
 import {
-  buildReport, checkAudit, checkCannibalization, checkCoverage, checkDuplicates, checkExistingContent, checkIntent, checkLanguage, checkPolicy, checkRules,
+  type ExistingHit, type ExistingInput, buildReport, checkAudit, checkCannibalization, checkCoverage, checkDuplicates, checkExistingContent, checkIntent, checkLanguage, checkPolicy, checkRules,
   checkSizeBalance, type Audit, type LangQa, type VItem, type VPair,
 } from "./verify";
 
@@ -114,6 +115,35 @@ async function projectOf(runId: string): Promise<string> {
   const p = z.object({ project_id: uuid }).safeParse(data);
   if (error || !p.success) throw new JobError("project lookup failed", "db_error", { retryable: true });
   return p.data.project_id;
+}
+
+/**
+ * V6 input: the pages the map's website already has. The website is the project's site, else the workspace's only site (same rule
+ * as site_article_target, 0021). Marks items the site covers (plan_items_mark_existing: "same" topic -> already_exists, "close" -> flag).
+ */
+async function existingOnSite(runId: string, workspaceId: string, locale: Locale, plan: { id: string; keyword: string }[]): Promise<ExistingInput> {
+  const none: ExistingInput = { pages: null, hits: [], total: plan.length };
+  const proj = await db().from("projects").select("site_id").eq("id", await projectOf(runId)).maybeSingle();
+  const own = uuid.safeParse(proj.data?.site_id);
+  let site: string | null = own.success ? own.data : null;
+  if (!site) {
+    const all = await db().from("sites").select("id").eq("workspace_id", workspaceId).limit(2);
+    const ids = z.array(z.object({ id: uuid })).safeParse(all.data ?? []);
+    site = ids.success && ids.data.length === 1 ? ids.data[0]!.id : null;
+  }
+  if (!site) return none;
+  const siteId = site;
+  const rows = z.array(z.object({ url: z.string(), title: z.string().nullable(), h1: z.string().nullable() })).parse(
+    await readAll<unknown>((from, to) => db().from("site_contents").select("url, title, h1").eq("site_id", siteId).order("id").range(from, to)),
+  );
+  if (rows.length === 0) return { pages: 0, hits: [], total: plan.length };
+  const find = buildIndex(rows, locale);
+  const hits: ExistingHit[] = plan.flatMap((it) => {
+    const m = find(it.keyword);
+    return m ? [{ itemId: it.id, keyword: it.keyword, kind: m.kind, url: m.url, title: m.title }] : [];
+  });
+  for (const part of chunk(hits, 500)) await rpc("plan_items_mark_existing", { p_run: runId, p_marks: part.map((h) => ({ id: h.itemId, kind: h.kind, url: h.url, title: h.title ?? "" })) });
+  return { pages: rows.length, hits, total: plan.length };
 }
 
 const langOf = (run: Run): "es" | "en" => (run.language.startsWith("es") ? "es" : "en");
@@ -536,13 +566,14 @@ const s9verify: JobHandler = async (ctx) => {
   const unexplored = sizingPlan ? Math.max(0, sizingPlan.values_total - sizingPlan.values_explored) : 0;
   const thresholds = thresholdsFor(run.params);
   const range = listRangeFor(run.params);
+  const existing = await existingOnSite(mapRunId, run.workspace_id, run.locale as Locale, plan);
   const checks = [
     checkDuplicates(vitems, vpairs, thresholds.high),
     checkCannibalization(vitems, vpairs, thresholds.low),
     checkCoverage(vitems, facets),
     checkIntent(vitems),
     checkLanguage(vitems, run.locale as Locale, qa),
-    checkExistingContent(),
+    checkExistingContent(existing),
     checkPolicy(vitems),
     checkAudit(audit),
     checkSizeBalance(vitems, silos, { min: run.target_min, max: run.target_max, auto: isAutoSize(run.params), trimmed, unexplored }),

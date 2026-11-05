@@ -8,6 +8,7 @@ import { LANGUAGES } from "@/lib/languages";
 import { createClient } from "@/lib/supabase/server";
 import { testSite } from "@/modules/wordpress/client";
 import { cleanAppPassword, decryptSitePassword, encryptSitePassword } from "@/modules/wordpress/secret";
+import { parseUrlList } from "@/modules/site-content/parse";
 import { normalizeSiteUrl } from "@/modules/wordpress/url";
 
 /**
@@ -102,4 +103,40 @@ export async function updateSiteSettings(formData: FormData) {
   if (res.error) console.error("site settings failed", res.error.code ?? "no_code");
   revalidatePath("/sites");
   redirect(`/sites?flash=${res.error ? "error" : "settings_saved"}`);
+}
+
+const syncForm = z.object({ site: z.string().uuid(), mode: z.enum(["auto", "urls"]), urls: z.string().max(60_000).optional() });
+
+/**
+ * Reads what the website already has (page titles and headings, never the full text) so the maps can notice topics that already exist.
+ * "auto" = WordPress REST, else sitemap, else RSS; "urls" = a pasted list of page addresses of the site. The work runs as background
+ * jobs (site.sync); this only checks membership (in SQL) and starts it.
+ */
+export async function syncSiteContent(formData: FormData) {
+  const { userId } = await me();
+  const f = syncForm.safeParse({ site: formData.get("site"), mode: formData.get("mode"), urls: formData.get("urls") ?? undefined });
+  if (!f.success) redirect("/sites?flash=error");
+  const sb = createAdminClient();
+  let urls: string[] | null = null;
+  if (f.data.mode === "urls") {
+    const row = await sb.from("sites").select("base_url").eq("id", f.data.site).maybeSingle();
+    const base = z.object({ base_url: z.string() }).safeParse(row.data);
+    if (!base.success) redirect("/sites?flash=error");
+    const parsed = parseUrlList(f.data.urls ?? "", new URL(base.data.base_url).hostname);
+    if (parsed.urls.length === 0) redirect("/sites?flash=sync_no_urls");
+    urls = parsed.urls;
+  }
+  const res = await sb.rpc("site_content_sync_start", { p_user: userId, p_site: f.data.site, p_mode: f.data.mode, p_urls: urls });
+  if (res.error) console.error("site sync start failed", res.error.code ?? "no_code");
+  revalidatePath("/sites");
+  redirect(`/sites?flash=${res.error ? (res.error.code === "PM007" ? "sync_running" : "error") : "sync_started"}`);
+}
+
+export async function clearSiteContent(formData: FormData) {
+  const { userId } = await me();
+  const f = idForm.safeParse({ site: formData.get("site") });
+  if (!f.success) redirect("/sites");
+  const res = await createAdminClient().rpc("site_content_clear", { p_user: userId, p_site: f.data.site });
+  revalidatePath("/sites");
+  redirect(`/sites?flash=${res.error ? "error" : "content_cleared"}`);
 }
